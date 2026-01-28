@@ -7,50 +7,52 @@ use Drupal\Core\Form\FormStateInterface;
 
 /**
  * Configuration form for edAItorial settings.
+ *
+ * Provides configuration options for AI integration, analysis settings,
+ * SEO parameters, and accessibility compliance levels.
  */
 class SettingsForm extends ConfigFormBase {
 
   /**
    * {@inheritdoc}
    */
-  public function getFormId() {
+  public function getFormId(): string {
     return 'edaitorial_settings';
   }
 
   /**
    * {@inheritdoc}
    */
-  protected function getEditableConfigNames() {
+  protected function getEditableConfigNames(): array {
     return ['edaitorial.settings'];
   }
 
   /**
    * {@inheritdoc}
    */
-  public function buildForm(array $form, FormStateInterface $form_state) {
+  public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('edaitorial.settings');
 
-    // AI Configuration
+    // AI Configuration Section
     $form['ai'] = [
       '#type' => 'details',
       '#title' => $this->t('AI Configuration'),
-      '#description' => $this->t('AI settings are managed by the Drupal AI module. Configure providers and models at <a href="@url">AI Settings</a>.', [
+      '#description' => $this->t('Configure AI-powered analysis features. AI settings are managed by the <a href="@url">Drupal AI module</a>.', [
         '@url' => '/admin/config/ai',
       ]),
       '#open' => TRUE,
     ];
 
-    // Get AI provider info
     $ai_info = $this->getAiProviderInfo();
 
     $form['ai']['use_ai'] = [
       '#type' => 'checkbox',
-      '#title' => $this->t('Use AI for content analysis'),
-      '#description' => $this->t('Enable AI-powered analysis using the configured AI provider.'),
+      '#title' => $this->t('Enable AI-powered content analysis'),
+      '#description' => $this->t('Use AI for advanced content analysis and suggestions. Requires a configured AI provider.'),
       '#default_value' => $config->get('use_ai') ?? TRUE,
     ];
 
-    // Show current AI configuration (read-only)
+    // Current AI Configuration Display
     $form['ai']['ai_info'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Current AI Configuration'),
@@ -62,141 +64,198 @@ class SettingsForm extends ConfigFormBase {
     $form['ai']['ai_info']['provider_display'] = [
       '#type' => 'item',
       '#title' => $this->t('Default Chat Provider'),
-      '#markup' => $ai_info['provider'] ? 
-        '<strong>' . $ai_info['provider_label'] . '</strong> (' . $ai_info['provider'] . ')' : 
-        '<em>' . $this->t('No provider configured. Please configure AI providers first.') . '</em>',
+      '#markup' => $ai_info['provider']
+        ? '<strong>' . $ai_info['provider_label'] . '</strong> (' . $ai_info['provider'] . ')'
+        : '<em>' . $this->t('No provider configured. Please configure AI providers first.') . '</em>',
     ];
 
     $form['ai']['ai_info']['model_display'] = [
       '#type' => 'item',
       '#title' => $this->t('Default Model'),
-      '#markup' => $ai_info['model'] ? 
-        '<strong>' . $ai_info['model'] . '</strong>' : 
-        '<em>' . $this->t('Will use provider\'s default model') . '</em>',
+      '#markup' => $ai_info['model']
+        ? '<strong>' . $ai_info['model'] . '</strong>'
+        : '<em>' . $this->t('Will use provider\'s default model') . '</em>',
     ];
 
     if (!$ai_info['provider']) {
       $form['ai']['ai_info']['warning'] = [
         '#type' => 'item',
-        '#markup' => '<div class="messages messages--warning">' . 
-          $this->t('No AI provider is configured. Please <a href="@url">configure an AI provider</a> first.', [
+        '#markup' => '<div class="messages messages--warning">' .
+          $this->t('No AI provider is configured. Please <a href="@url">configure an AI provider</a> first to enable AI-powered analysis.', [
             '@url' => '/admin/config/ai',
           ]) . '</div>',
       ];
     }
 
-    // Prompts Configuration
-    $form['prompts'] = [
-      '#type' => 'details',
-      '#title' => $this->t('AI Prompts Configuration'),
-      '#description' => $this->t('Configure the prompts used by each checker. Use {title}, {body}, and {url} as placeholders.'),
-      '#open' => FALSE,
-    ];
-
-    $form['prompts']['seo_prompt'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('SEO Checker Prompt'),
-      '#default_value' => $config->get('seo_prompt') ?? $this->getDefaultSeoPrompt(),
-      '#rows' => 8,
-    ];
-
-    $form['prompts']['broken_links_prompt'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Broken Links Checker Prompt'),
-      '#default_value' => $config->get('broken_links_prompt') ?? $this->getDefaultBrokenLinksPrompt(),
-      '#rows' => 8,
-    ];
-
-    $form['prompts']['typos_prompt'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Typos Checker Prompt'),
-      '#default_value' => $config->get('typos_prompt') ?? $this->getDefaultTyposPrompt(),
-      '#rows' => 8,
-    ];
-
-    $form['prompts']['suggestions_prompt'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Suggestions Checker Prompt'),
-      '#default_value' => $config->get('suggestions_prompt') ?? $this->getDefaultSuggestionsPrompt(),
-      '#rows' => 8,
-    ];
-
+    // Analysis Settings Section
     $form['analysis'] = [
       '#type' => 'details',
       '#title' => $this->t('Analysis Settings'),
+      '#description' => $this->t('Configure when and how content analysis is performed.'),
       '#open' => FALSE,
     ];
 
     $form['analysis']['enable_pre_publish_check'] = [
       '#type' => 'checkbox',
-      '#title' => $this->t('Enable pre-publish content check'),
-      '#description' => $this->t('Analyze content for SEO and accessibility before publishing.'),
+      '#title' => $this->t('Enable pre-publish content analysis'),
+      '#description' => $this->t('Add content analysis tools to node edit forms for real-time feedback.'),
       '#default_value' => $config->get('enable_pre_publish_check') ?? TRUE,
     ];
 
     $form['analysis']['auto_suggestions'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable AI-powered suggestions'),
-      '#description' => $this->t('Get automatic suggestions for content improvement.'),
+      '#description' => $this->t('Provide automatic suggestions for content improvement using AI analysis.'),
       '#default_value' => $config->get('auto_suggestions') ?? TRUE,
+      '#states' => [
+        'visible' => [':input[name="use_ai"]' => ['checked' => TRUE]],
+      ],
     ];
 
+    // SEO Settings Section
     $form['seo'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('SEO Settings'),
+      '#description' => $this->t('Configure SEO analysis parameters and thresholds.'),
     ];
 
     $form['seo']['min_title_length'] = [
       '#type' => 'number',
-      '#title' => $this->t('Minimum title length'),
+      '#title' => $this->t('Minimum title length (characters)'),
+      '#description' => $this->t('Titles shorter than this will be flagged as SEO issues.'),
       '#default_value' => $config->get('min_title_length') ?? 30,
       '#min' => 10,
       '#max' => 100,
+      '#step' => 1,
     ];
 
     $form['seo']['max_title_length'] = [
       '#type' => 'number',
-      '#title' => $this->t('Maximum title length'),
+      '#title' => $this->t('Maximum title length (characters)'),
+      '#description' => $this->t('Titles longer than this will be flagged as SEO issues.'),
       '#default_value' => $config->get('max_title_length') ?? 60,
       '#min' => 10,
       '#max' => 100,
+      '#step' => 1,
     ];
 
+    // Accessibility Settings Section
     $form['accessibility'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Accessibility Settings'),
+      '#description' => $this->t('Configure WCAG compliance targets and accessibility analysis.'),
     ];
 
     $form['accessibility']['wcag_level'] = [
       '#type' => 'select',
       '#title' => $this->t('Target WCAG compliance level'),
+      '#description' => $this->t('The WCAG compliance level to target for accessibility analysis.'),
       '#options' => [
-        'A' => $this->t('Level A'),
-        'AA' => $this->t('Level AA (Recommended)'),
-        'AAA' => $this->t('Level AAA'),
+        'A' => $this->t('Level A - Basic accessibility'),
+        'AA' => $this->t('Level AA - Standard compliance (Recommended)'),
+        'AAA' => $this->t('Level AAA - Enhanced accessibility'),
       ],
       '#default_value' => $config->get('wcag_level') ?? 'AA',
     ];
+
+    // AI Prompts Configuration Section
+    $form['prompts'] = [
+      '#type' => 'details',
+      '#title' => $this->t('AI Prompts Configuration'),
+      '#description' => $this->t('Customize the prompts used by AI checkers. Use placeholders: {title}, {body}, {url}, {word_count}, {available_nodes}'),
+      '#open' => FALSE,
+      '#states' => [
+        'visible' => [':input[name="use_ai"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $this->buildPromptFields($form, $config);
 
     return parent::buildForm($form, $form_state);
   }
 
   /**
+   * Build AI prompt configuration fields.
+   *
+   * @param array &$form
+   *   The form array.
+   * @param \Drupal\Core\Config\ImmutableConfig $config
+   *   The configuration object.
+   */
+  protected function buildPromptFields(array &$form, $config): void {
+    $prompts = [
+      'seo_prompt' => [
+        'title' => $this->t('SEO Checker Prompt'),
+        'default' => $this->getDefaultSeoPrompt(),
+      ],
+      'broken_links_prompt' => [
+        'title' => $this->t('Broken Links Checker Prompt'),
+        'default' => $this->getDefaultBrokenLinksPrompt(),
+      ],
+      'typos_prompt' => [
+        'title' => $this->t('Typos Checker Prompt'),
+        'default' => $this->getDefaultTyposPrompt(),
+      ],
+      'suggestions_prompt' => [
+        'title' => $this->t('Suggestions Checker Prompt'),
+        'default' => $this->getDefaultSuggestionsPrompt(),
+      ],
+    ];
+
+    foreach ($prompts as $key => $prompt_info) {
+      $form['prompts'][$key] = [
+        '#type' => 'textarea',
+        '#title' => $prompt_info['title'],
+        '#default_value' => $config->get($key) ?? $prompt_info['default'],
+        '#rows' => 8,
+        '#attributes' => [
+          'style' => 'font-family: monospace; font-size: 12px;',
+        ],
+      ];
+    }
+  }
+
+  /**
    * {@inheritdoc}
    */
-  public function submitForm(array &$form, FormStateInterface $form_state) {
-    $this->config('edaitorial.settings')
-      ->set('use_ai', $form_state->getValue('use_ai'))
-      ->set('seo_prompt', $form_state->getValue('seo_prompt'))
-      ->set('broken_links_prompt', $form_state->getValue('broken_links_prompt'))
-      ->set('typos_prompt', $form_state->getValue('typos_prompt'))
-      ->set('suggestions_prompt', $form_state->getValue('suggestions_prompt'))
-      ->set('enable_pre_publish_check', $form_state->getValue('enable_pre_publish_check'))
-      ->set('auto_suggestions', $form_state->getValue('auto_suggestions'))
-      ->set('min_title_length', $form_state->getValue('min_title_length'))
-      ->set('max_title_length', $form_state->getValue('max_title_length'))
-      ->set('wcag_level', $form_state->getValue('wcag_level'))
-      ->save();
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    // Validate title length settings
+    $min_length = $form_state->getValue('min_title_length');
+    $max_length = $form_state->getValue('max_title_length');
+
+    if ($min_length >= $max_length) {
+      $form_state->setErrorByName('max_title_length',
+        $this->t('Maximum title length must be greater than minimum title length.'));
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function submitForm(array &$form, FormStateInterface $form_state): void {
+    $config = $this->config('edaitorial.settings');
+
+    // Save all form values
+    $values_to_save = [
+      'use_ai',
+      'enable_pre_publish_check',
+      'auto_suggestions',
+      'min_title_length',
+      'max_title_length',
+      'wcag_level',
+      'seo_prompt',
+      'broken_links_prompt',
+      'typos_prompt',
+      'suggestions_prompt',
+    ];
+
+    foreach ($values_to_save as $key) {
+      $config->set($key, $form_state->getValue($key));
+    }
+
+    $config->save();
 
     parent::submitForm($form, $form_state);
   }
@@ -207,7 +266,7 @@ class SettingsForm extends ConfigFormBase {
    * @return array
    *   Array with provider, provider_label, and model information.
    */
-  protected function getAiProviderInfo() {
+  protected function getAiProviderInfo(): array {
     $info = [
       'provider' => NULL,
       'provider_label' => NULL,
@@ -215,29 +274,32 @@ class SettingsForm extends ConfigFormBase {
     ];
 
     try {
-      // Get default provider for 'chat' operation
       $ai_config = \Drupal::config('ai.settings');
       $default_providers = $ai_config->get('default_providers') ?? [];
-      
+
       if (isset($default_providers['chat'])) {
-        $provider_id = $default_providers['chat'];
-        $info['provider'] = $provider_id;
-        
-        // Get provider label
-        $ai_provider_manager = \Drupal::service('ai.provider');
-        $definitions = $ai_provider_manager->getDefinitions();
-        
-        if (isset($definitions[$provider_id])) {
-          $info['provider_label'] = (string) $definitions[$provider_id]['label'];
+        $provider_config = $default_providers['chat'];
+
+        if (is_array($provider_config)) {
+          $provider_id = $provider_config['provider_id'] ?? NULL;
+          $model_id = $provider_config['model_id'] ?? NULL;
+        } else {
+          $provider_id = $provider_config;
+          $model_id = NULL;
         }
-        
-        // Try to get default model from provider config
-        $provider_config_name = 'ai_provider_' . $provider_id . '.settings';
-        $provider_config = \Drupal::config($provider_config_name);
-        
-        // Some providers might have a default_model setting
-        if ($default_model = $provider_config->get('default_model')) {
-          $info['model'] = $default_model;
+
+        if ($provider_id) {
+          $info['provider'] = $provider_id;
+
+          // Get provider label
+          $ai_provider_manager = \Drupal::service('ai.provider');
+          $definitions = $ai_provider_manager->getDefinitions();
+
+          if (isset($definitions[$provider_id])) {
+            $info['provider_label'] = (string) $definitions[$provider_id]['label'];
+          }
+
+          $info['model'] = $model_id;
         }
       }
     }
@@ -252,8 +314,11 @@ class SettingsForm extends ConfigFormBase {
 
   /**
    * Get default SEO checker prompt.
+   *
+   * @return string
+   *   The default SEO prompt template.
    */
-  protected function getDefaultSeoPrompt() {
+  protected function getDefaultSeoPrompt(): string {
     return <<<'EOT'
 Analyze the following content for SEO issues and return a JSON array of issues found.
 
@@ -287,8 +352,11 @@ EOT;
 
   /**
    * Get default broken links checker prompt.
+   *
+   * @return string
+   *   The default broken links prompt template.
    */
-  protected function getDefaultBrokenLinksPrompt() {
+  protected function getDefaultBrokenLinksPrompt(): string {
     return <<<'EOT'
 Analyze the following HTML content for broken or problematic links and return a JSON array of issues.
 
@@ -318,8 +386,11 @@ EOT;
 
   /**
    * Get default typos checker prompt.
+   *
+   * @return string
+   *   The default typos prompt template.
    */
-  protected function getDefaultTyposPrompt() {
+  protected function getDefaultTyposPrompt(): string {
     return <<<'EOT'
 Analyze the following content for spelling errors, typos, and repeated words.
 
@@ -353,8 +424,11 @@ EOT;
 
   /**
    * Get default suggestions checker prompt.
+   *
+   * @return string
+   *   The default suggestions prompt template.
    */
-  protected function getDefaultSuggestionsPrompt() {
+  protected function getDefaultSuggestionsPrompt(): string {
     return <<<'EOT'
 Analyze the following content and provide improvement suggestions.
 

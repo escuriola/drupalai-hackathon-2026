@@ -31,6 +31,6 @@ edaitorial_real_time_checker.ask_ai:
   defaults:
     _controller: '\Drupal\edaitorial_real_time_checker\Controller\RealTimeController::askAi'
   requirements:
-    _permission: 'view edaitorial'
+    _permission: 'access content'
   options:
     _ajax: TRUE

@@ -116,7 +116,8 @@
 
 .metric-card--action .button {
   margin-top: 8px;
-  width: 100%;
+  width: auto;
+  margin: auto;
   text-align: center;
 }
 
@@ -496,6 +497,36 @@
   color: #7b1fa2;
 }
 
+/* More badge types for the detail view */
+.badge-typos {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.badge-broken {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.badge-links {
+  background: #e3f2fd;
+  color: #0277bd;
+}
+
+.badge-security {
+  background: #fce4ec;
+  color: #c2185b;
+}
+
+.badge-content {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .severity {
   padding: 4px 8px;
   border-radius: 4px;
@@ -708,6 +739,43 @@
   border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.badge-issues {
+  background: #fff3e0;
+  color: #ff9800;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.issue-severity-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.severity-badge--critical {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.severity-badge--high {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.severity-badge--medium {
+  background: #fff9c4;
+  color: #f57f17;
+}
+
+.severity-badge--low {
+  background: #e3f2fd;
+  color: #1565c0;
 }
 
 /* Row styling based on status */
@@ -1678,6 +1746,27 @@
   stroke-linecap: round;
   stroke-dasharray: 565;
   transition: stroke-dashoffset 1s ease;
+}
+
+/* Score colors for different quality levels */
+.score-circle--excellent .score-fill {
+  stroke: #4caf50;
+}
+
+.score-circle--good .score-fill {
+  stroke: #8bc34a;
+}
+
+.score-circle--fair .score-fill {
+  stroke: #ff9800;
+}
+
+.score-circle--poor .score-fill {
+  stroke: #ff5722;
+}
+
+.score-circle--critical .score-fill {
+  stroke: #f44336;
 }
 
 .score-content {
