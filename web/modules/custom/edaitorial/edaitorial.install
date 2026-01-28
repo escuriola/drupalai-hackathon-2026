@@ -1,0 +1,73 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the edAItorial module.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function edaitorial_install() {
+  // Set default configuration.
+  $config = \Drupal::configFactory()->getEditable('edaitorial.settings');
+  $config->set('enable_pre_publish_check', TRUE);
+  $config->set('auto_suggestions', TRUE);
+  $config->set('min_title_length', 30);
+  $config->set('max_title_length', 60);
+  $config->set('wcag_level', 'AA');
+  $config->save();
+
+  \Drupal::messenger()->addStatus(t('edAItorial has been installed. Visit the <a href="@dashboard">dashboard</a> to start analyzing your content.', [
+    '@dashboard' => '/admin/config/content/edaitorial',
+  ]));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function edaitorial_uninstall() {
+  // Delete all configuration.
+  \Drupal::configFactory()->getEditable('edaitorial.settings')->delete();
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function edaitorial_requirements($phase) {
+  $requirements = [];
+
+  if ($phase == 'runtime') {
+    // Check if Node module is enabled.
+    if (!\Drupal::moduleHandler()->moduleExists('node')) {
+      $requirements['edaitorial_node'] = [
+        'title' => t('edAItorial - Node module'),
+        'value' => t('Not enabled'),
+        'description' => t('The Node module must be enabled for edAItorial to work properly.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+    else {
+      $requirements['edaitorial_node'] = [
+        'title' => t('edAItorial'),
+        'value' => t('Configured correctly'),
+        'severity' => REQUIREMENT_OK,
+      ];
+    }
+
+    // Check content count.
+    $node_count = \Drupal::entityQuery('node')
+      ->condition('status', 1)
+      ->accessCheck(FALSE)
+      ->count()
+      ->execute();
+
+    $requirements['edaitorial_content'] = [
+      'title' => t('edAItorial - Content'),
+      'value' => t('@count published pages', ['@count' => $node_count]),
+      'severity' => REQUIREMENT_INFO,
+    ];
+  }
+
+  return $requirements;
+}

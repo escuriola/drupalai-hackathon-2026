@@ -1,0 +1,80 @@
+# edAItorial module services configuration
+# Defines all services used by the edAItorial module for content analysis
+
+services:
+  # Logger channel for edAItorial
+  logger.channel.edaitorial:
+    parent: logger.channel_base
+    arguments: ['edaitorial']
+  # Main content analyzer service
+  edaitorial.analyzer:
+    class: Drupal\edaitorial\Service\ContentAnalyzer
+    arguments: 
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.factory'
+    tags:
+      - { name: 'service' }
+
+  # SEO analysis service
+  edaitorial.seo_analyzer:
+    class: Drupal\edaitorial\Service\SeoAnalyzer
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+    tags:
+      - { name: 'service' }
+
+  # Accessibility (WCAG) analysis service
+  edaitorial.accessibility_analyzer:
+    class: Drupal\edaitorial\Service\AccessibilityAnalyzer
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+    tags:
+      - { name: 'service' }
+
+  # Metrics collection service for dashboard
+  edaitorial.metrics_collector:
+    class: Drupal\edaitorial\Service\MetricsCollector
+    arguments:
+      - '@edaitorial.seo_analyzer'
+      - '@edaitorial.accessibility_analyzer'
+      - '@plugin.manager.edaitorial_checker'
+    tags:
+      - { name: 'service' }
+
+  # Plugin manager for edAItorial checker plugins
+  plugin.manager.edaitorial_checker:
+    class: Drupal\edaitorial\EdaitorialCheckerManager
+    parent: default_plugin_manager
+    tags:
+      - { name: 'plugin_manager' }
+
+  # Cache invalidator service for node operations
+  edaitorial.cache_invalidator:
+    class: Drupal\edaitorial\EventSubscriber\NodeEventSubscriber
+    arguments: ['@cache_tags.invalidator']
+    tags:
+      - { name: 'service' }
+
+  # DISABLED: Event subscribers require hook_event_dispatcher module
+  # These are now handled via native Drupal hooks in edaitorial.module
+  
+  # edaitorial.form_event_subscriber:
+  #   class: Drupal\edaitorial\EventSubscriber\FormEventSubscriber
+  #   arguments: ['@config.factory', '@edaitorial.analyzer', '@logger.channel.edaitorial']
+  #   tags:
+  #     - { name: event_subscriber }
+
+  # edaitorial.cron_event_subscriber:
+  #   class: Drupal\edaitorial\EventSubscriber\CronEventSubscriber
+  #   arguments: ['@entity_type.manager', '@edaitorial.seo_analyzer', '@edaitorial.accessibility_analyzer', '@state', '@logger.channel.edaitorial']
+  #   tags:
+  #     - { name: event_subscriber }
+
+  # edaitorial.page_event_subscriber:
+  #   class: Drupal\edaitorial\EventSubscriber\PageEventSubscriber
+  #   arguments: ['@current_route_match']
+  #   tags:
+  #     - { name: event_subscriber }

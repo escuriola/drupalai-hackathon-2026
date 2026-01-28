@@ -1,0 +1,277 @@
+{#
+/**
+ * @file
+ * Template for the Content Audit page.
+ *
+ * Available variables:
+ * - audit_results: Content audit results with scores.
+ */
+#}
+
+<div class="edaitorial-content-audit">
+  <h2>{{ 'Content Audit'|t }}</h2>
+  
+  {% if audit_results|length == 0 %}
+    <div class="audit-notice">
+      <div class="notice-content">
+        <h3>{{ 'No Content to Audit'|t }}</h3>
+        <p>{{ 'There are no pages to audit. Create some content first!'|t }}</p>
+        <a href="/node/add" class="button button--primary">{{ 'Create Content'|t }}</a>
+      </div>
+    </div>
+  {% else %}
+  
+  <div class="audit-summary">
+    <p>{{ 'Click on any row to run full AI analysis and see detailed recommendations.'|t }}</p>
+    <p class="audit-stats">
+      {% set total_pages = audit_results|length %}
+      {% set published_count = 0 %}
+      {% set draft_count = 0 %}
+      {% set content_types = {} %}
+      {% for item in audit_results %}
+        {% if item.status %}
+          {% set published_count = published_count + 1 %}
+        {% else %}
+          {% set draft_count = draft_count + 1 %}
+        {% endif %}
+        {% set content_types = content_types|merge({(item.type): true}) %}
+      {% endfor %}
+      
+      <strong>{{ total_pages }}</strong> {{ 'pages available'|t }} 
+      (<span class="stat-published">{{ published_count }} published</span>, 
+      <span class="stat-draft">{{ draft_count }} drafts</span>)
+    </p>
+  </div>
+
+  {# Filters #}
+  <div class="audit-filters">
+    <div class="filter-group">
+      <label for="filter-search">{{ 'Search:'|t }}</label>
+      <input type="text" id="filter-search" class="filter-search" placeholder="{{ 'Type to search...'|t }}">
+    </div>
+    
+    <div class="filter-group">
+      <label for="filter-status">{{ 'Status:'|t }}</label>
+      <select id="filter-status" class="filter-select">
+        <option value="all">{{ 'All'|t }}</option>
+        <option value="published">{{ 'Published'|t }}</option>
+        <option value="draft">{{ 'Draft'|t }}</option>
+      </select>
+    </div>
+    
+    <div class="filter-group">
+      <label for="filter-type">{{ 'Content Type:'|t }}</label>
+      <select id="filter-type" class="filter-select">
+        <option value="all">{{ 'All Types'|t }}</option>
+        {% set unique_types = {} %}
+        {% for item in audit_results %}
+          {% set unique_types = unique_types|merge({(item.type): item.type}) %}
+        {% endfor %}
+        {% for type_key, type_label in unique_types %}
+          <option value="{{ type_key }}">{{ type_label|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    
+    <div class="filter-group">
+      <button type="button" id="filter-reset" class="button button--secondary">{{ 'Reset Filters'|t }}</button>
+    </div>
+    
+    <div class="filter-results">
+      <span id="results-count">{{ 'Showing'|t }} <strong>{{ total_pages }}</strong> {{ 'of'|t }} {{ total_pages }}</span>
+    </div>
+  </div>
+
+  {# Table #}
+  <div class="audit-table-wrapper">
+    <table class="audit-table">
+      <thead>
+        <tr>
+          <th class="sortable" data-sort="title">
+            {{ 'Title'|t }}
+            <span class="sort-icon">⇅</span>
+          </th>
+          <th class="sortable" data-sort="status">
+            {{ 'Status'|t }}
+            <span class="sort-icon">⇅</span>
+          </th>
+          <th class="sortable" data-sort="type">
+            {{ 'Type'|t }}
+            <span class="sort-icon">⇅</span>
+          </th>
+          <th class="sortable" data-sort="changed">
+            {{ 'Last Updated'|t }}
+            <span class="sort-icon">⇅</span>
+          </th>
+          <th>{{ 'Actions'|t }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in audit_results %}
+          <tr class="audit-row" 
+              data-title="{{ item.title|lower }}"
+              data-status="{{ item.status ? 'published' : 'draft' }}"
+              data-type="{{ item.type }}"
+              data-changed="{{ item.changed }}"
+              data-url="/admin/config/content/edaitorial/content-audit/{{ item.id }}">
+            
+            <td class="audit-title">
+              <a href="/admin/config/content/edaitorial/content-audit/{{ item.id }}" class="title-link">
+                <strong>{{ item.title }}</strong>
+              </a>
+            </td>
+            
+            <td class="audit-status">
+              {% if item.status %}
+                <span class="badge badge-published">{{ 'Published'|t }}</span>
+              {% else %}
+                <span class="badge badge-draft">{{ 'Draft'|t }}</span>
+              {% endif %}
+            </td>
+            
+            <td class="audit-type">
+              <span class="badge badge-type">{{ item.type }}</span>
+            </td>
+            
+            <td class="audit-date">
+              {{ item.changed|date('M d, Y') }}
+              <span class="date-time">{{ item.changed|date('H:i') }}</span>
+            </td>
+            
+            <td class="audit-actions">
+              <a href="/admin/config/content/edaitorial/content-audit/{{ item.id }}" 
+                 class="button button--small button--primary">
+                {{ 'Analyze'|t }}
+              </a>
+              <a href="/node/{{ item.id }}/edit" 
+                 class="button button--small button--secondary"
+                 onclick="event.stopPropagation();">
+                {{ 'Edit'|t }}
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="audit-table-footer">
+    <p>{{ 'Click on any row or "Analyze" button to run full AI analysis'|t }}</p>
+  </div>
+  
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  'use strict';
+  
+  const table = document.querySelector('.audit-table');
+  if (!table) return;
+  
+  const rows = Array.from(document.querySelectorAll('.audit-row'));
+  const searchInput = document.getElementById('filter-search');
+  const statusSelect = document.getElementById('filter-status');
+  const typeSelect = document.getElementById('filter-type');
+  const resetButton = document.getElementById('filter-reset');
+  const resultsCount = document.getElementById('results-count');
+  const totalRows = rows.length;
+  
+  // Make rows clickable
+  rows.forEach(row => {
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', function(e) {
+      // Don't navigate if clicking on a link or button
+      if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON' || e.target.closest('a') || e.target.closest('button')) {
+        return;
+      }
+      window.location.href = this.dataset.url;
+    });
+  });
+  
+  // Filter function
+  function filterRows() {
+    const searchTerm = searchInput.value.toLowerCase();
+    const statusFilter = statusSelect.value;
+    const typeFilter = typeSelect.value;
+    
+    let visibleCount = 0;
+    
+    rows.forEach(row => {
+      const title = row.dataset.title;
+      const status = row.dataset.status;
+      const type = row.dataset.type;
+      
+      const matchesSearch = title.includes(searchTerm);
+      const matchesStatus = statusFilter === 'all' || status === statusFilter;
+      const matchesType = typeFilter === 'all' || type === typeFilter;
+      
+      if (matchesSearch && matchesStatus && matchesType) {
+        row.style.display = '';
+        visibleCount++;
+      } else {
+        row.style.display = 'none';
+      }
+    });
+    
+    resultsCount.innerHTML = 'Showing <strong>' + visibleCount + '</strong> of ' + totalRows;
+  }
+  
+  // Event listeners
+  searchInput.addEventListener('input', filterRows);
+  statusSelect.addEventListener('change', filterRows);
+  typeSelect.addEventListener('change', filterRows);
+  
+  resetButton.addEventListener('click', function() {
+    searchInput.value = '';
+    statusSelect.value = 'all';
+    typeSelect.value = 'all';
+    filterRows();
+  });
+  
+  // Sorting
+  let sortDirection = {};
+  document.querySelectorAll('.sortable').forEach(header => {
+    sortDirection[header.dataset.sort] = 'asc';
+    
+    header.addEventListener('click', function() {
+      const sortKey = this.dataset.sort;
+      const direction = sortDirection[sortKey];
+      
+      // Sort rows
+      rows.sort((a, b) => {
+        let aVal = a.dataset[sortKey];
+        let bVal = b.dataset[sortKey];
+        
+        // Handle different data types
+        if (sortKey === 'changed') {
+          aVal = parseInt(aVal);
+          bVal = parseInt(bVal);
+        } else {
+          aVal = aVal.toLowerCase();
+          bVal = bVal.toLowerCase();
+        }
+        
+        if (direction === 'asc') {
+          return aVal > bVal ? 1 : -1;
+        } else {
+          return aVal < bVal ? 1 : -1;
+        }
+      });
+      
+      // Re-append rows in sorted order
+      const tbody = table.querySelector('tbody');
+      rows.forEach(row => tbody.appendChild(row));
+      
+      // Toggle direction
+      sortDirection[sortKey] = direction === 'asc' ? 'desc' : 'asc';
+      
+      // Update sort icons
+      document.querySelectorAll('.sortable').forEach(h => {
+        h.classList.remove('sorted-asc', 'sorted-desc');
+      });
+      this.classList.add('sorted-' + direction);
+    });
+  });
+})();
+</script>

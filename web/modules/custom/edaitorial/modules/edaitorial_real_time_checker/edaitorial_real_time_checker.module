@@ -1,0 +1,384 @@
+<?php
+
+/**
+ * @file
+ * edAItorial Quality Gate module - Workflow quality gate before publishing.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\node\NodeInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Render\Markup;
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter() for node_form.
+ */
+function edaitorial_real_time_checker_form_node_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  $config = \Drupal::config('edaitorial_real_time_checker.settings');
+  
+  // DEBUG: Log to watchdog
+  \Drupal::logger('quality_gate')->info('Form alter called for form_id: @form_id', ['@form_id' => $form_id]);
+  \Drupal::logger('quality_gate')->info('Config: enable_quality_gate = @enabled', [
+    '@enabled' => $config->get('enable_quality_gate') ? 'TRUE' : 'FALSE/NULL'
+  ]);
+  
+  if (!$config->get('enable_quality_gate')) {
+    \Drupal::logger('quality_gate')->warning('Quality Gate is DISABLED. Not generating tab.');
+    return;
+  }
+  
+  $node = $form_state->getFormObject()->getEntity();
+  $enabled_types = $config->get('enabled_content_types') ?: [];
+  
+  \Drupal::logger('quality_gate')->info('Node bundle: @bundle, Enabled types: @types', [
+    '@bundle' => $node->bundle(),
+    '@types' => implode(', ', $enabled_types)
+  ]);
+  
+  if (empty($enabled_types) || in_array($node->bundle(), $enabled_types)) {
+    \Drupal::logger('quality_gate')->info('GENERATING Quality Gate tab...');
+    
+    // Add Ask AI buttons inline for each field
+    _edaitorial_add_ask_ai_to_fields($form, $node);
+    
+    // Add quality gate as a VERTICAL TAB (like "Revision information", "URL alias", etc.)
+    $form['edaitorial_quality_gate'] = [
+      '#type' => 'details',
+      '#title' => t('edAItorial checker'),
+      '#group' => 'advanced',
+      '#weight' => -999,
+      '#attributes' => [
+        'class' => ['edaitorial-quality-gate-tab'],
+      ],
+    ];
+    
+    // Get previous analysis from State API (permanent storage)
+    $previous_analysis = NULL;
+    if ($node->id()) {
+      $state = \Drupal::state();
+      $cache_key = 'quality_gate.analysis.' . $node->id();
+      $previous_analysis = $state->get($cache_key);
+      
+      \Drupal::logger('quality_gate')->info('Loading analysis for node @nid: @data', [
+        '@nid' => $node->id(),
+        '@data' => $previous_analysis ? json_encode($previous_analysis) : 'NULL',
+      ]);
+    }
+    
+    // Use previous analysis or default to zero
+    $analysis_data = [
+      'score' => $previous_analysis['score'] ?? 0,
+      'category_scores' => $previous_analysis['category_scores'] ?? [
+        'seo' => 0,
+        'accessibility' => 0,
+        'typos' => 0,
+        'links' => 0,
+        'content' => 0,
+      ],
+      'issues' => $previous_analysis['issues'] ?? [],
+      'has_previous' => !empty($previous_analysis),
+    ];
+    
+    $form['edaitorial_quality_gate']['panel'] = [
+      '#type' => 'markup',
+      '#markup' => Markup::create(_edaitorial_quality_gate_render_panel($analysis_data, $node)),
+    ];
+    
+    // Add AI Assistant modal container
+    $form['ai_assistant_modal'] = [
+      '#type' => 'markup',
+      '#markup' => '<div id="ai-assistant-modal" class="ai-assistant-modal" style="display: none;"></div>',
+      '#weight' => 1000,
+    ];
+    
+    // Add RESULTS CONTAINER at the bottom of the form
+    $form['quality_analysis_results'] = [
+      '#type' => 'details',
+      '#title' => t('Quality Analysis Results'),
+      '#open' => FALSE,
+      '#weight' => 999, // Place at the very bottom
+      '#attributes' => [
+        'id' => 'quality-analysis-results',
+        'class' => ['quality-analysis-results-container'],
+        'style' => 'display: none;', // Hidden by default until analysis runs
+      ],
+    ];
+    
+    $form['quality_analysis_results']['content'] = [
+      '#type' => 'markup',
+      '#markup' => '<div id="quality-results-content"></div>',
+    ];
+    
+    // Attach library
+    $form['#attached']['library'][] = 'edaitorial_real_time_checker/quality_gate';
+    
+    // Pass settings to JavaScript (including previous analysis if exists)
+    // Use (bool) to ensure proper boolean conversion (checkbox unchecked = 0, not NULL)
+    $block_publishing_raw = $config->get('block_publishing_below_threshold');
+    $block_publishing = ($block_publishing_raw === NULL) ? TRUE : (bool) $block_publishing_raw;
+    
+    $form['#attached']['drupalSettings']['edaitorialQualityGate'] = [
+      'enabled' => TRUE,
+      'minScore' => $config->get('min_score') ?: 80,
+      'blockPublishing' => $block_publishing,
+      'currentScore' => $analysis_data['score'] ?? 0,
+      'hasPreviousAnalysis' => $analysis_data['has_previous'] ?? FALSE,
+      'previousCategoryScores' => $analysis_data['category_scores'] ?? NULL,
+      'nodeId' => $node->id(),
+      'isNewNode' => $node->isNew(),
+      'isPublished' => $node->isPublished(),
+    ];
+    
+    // Add validation
+    $form['#validate'][] = 'edaitorial_real_time_checker_node_form_validate';
+  }
+}
+
+/**
+ * Custom validation for quality gate.
+ */
+function edaitorial_real_time_checker_node_form_validate(&$form, FormStateInterface $form_state) {
+  $config = \Drupal::config('edaitorial_real_time_checker.settings');
+  $min_score = $config->get('min_score') ?: 80;
+  
+  $node = $form_state->getFormObject()->getEntity();
+  
+  // Only validate if trying to publish
+  $moderation_state = $form_state->getValue('moderation_state');
+  if (!$moderation_state || $moderation_state[0]['value'] !== 'published') {
+    return;
+  }
+  
+  // Get current content
+  $title = $form_state->getValue('title')[0]['value'] ?? '';
+  $body = $form_state->getValue('body')[0]['value'] ?? '';
+  
+  if (empty($title) || empty($body)) {
+    return;
+  }
+  
+  // Analyze content
+  $analyzer = \Drupal::service('edaitorial_real_time_checker.analyzer');
+  $analysis = $analyzer->analyzeContent($title, $body, $node->bundle());
+  
+  // Check score
+  if ($analysis['score'] < $min_score) {
+    $form_state->setErrorByName('moderation_state', t(
+      'Quality score: @score% (required: @min%). Please improve content quality or save as draft.',
+      [
+        '@score' => $analysis['score'],
+        '@min' => $min_score,
+      ]
+    ));
+    
+    // Store analysis in temp store for display
+    $tempstore = \Drupal::service('tempstore.private')->get('edaitorial_quality_gate');
+    $tempstore->set('last_analysis_' . $node->uuid(), $analysis);
+  }
+}
+
+/**
+ * Renders the quality gate panel.
+ */
+function _edaitorial_quality_gate_render_panel(array $analysis, NodeInterface $node) {
+  $config = \Drupal::config('edaitorial_real_time_checker.settings');
+  $min_score = $config->get('min_score') ?: 80;
+  $score = $analysis['score'] ?? 0;
+  $can_publish = $score >= $min_score;
+  
+  $status_class = $can_publish && $score > 0 ? 'can-publish' : 'cannot-publish';
+  $status_icon = $can_publish && $score > 0 ? '✓' : ($score > 0 ? '✗' : '⏸');
+  
+  $output = '<div class="quality-gate-content">';
+  
+  // Info banner
+  $output .= '<div class="gate-info-banner">';
+  $output .= '<p><strong>Quality Analysis</strong></p>';
+  $output .= '<p>A minimum score of <strong>' . $min_score . '%</strong> is required for publication. Click "Analyze Content" to review quality metrics.</p>';
+  $output .= '</div>';
+  
+  // Status header
+  $output .= '<div class="gate-status-header">';
+  $output .= '<div class="status-badge status-' . $status_class . '">';
+  $output .= $status_icon . ' ';
+  $output .= $score > 0 ? ($can_publish ? 'Ready to Publish' : 'Below Threshold') : 'Not Analyzed';
+  $output .= '</div>';
+  $output .= '</div>';
+  
+  // Overall score
+  $output .= '<div class="overall-score-section">';
+  $output .= '<div class="score-main">';
+  $output .= '<span class="score-label">Overall Quality Score</span>';
+  $output .= '<span class="score-value-big">' . $score . '%</span>';
+  $output .= '</div>';
+  $output .= '<div class="score-bar">';
+  $output .= '<div class="score-fill" style="width: ' . $score . '%"></div>';
+  $output .= '<div class="score-min-marker" style="left: ' . $min_score . '%"><span>' . $min_score . '%</span></div>';
+  $output .= '</div>';
+  $output .= '</div>';
+  
+  // Category scores - ALWAYS show, even if empty
+  $categories = !empty($analysis['category_scores']) ? $analysis['category_scores'] : [
+    'seo' => 0,
+    'accessibility' => 0,
+    'typos' => 0,
+    'links' => 0,
+    'content' => 0,
+  ];
+  
+  $output .= '<div class="category-scores">';
+  $output .= '<h4>Category Breakdown</h4>';
+  
+  foreach ($categories as $category => $cat_score) {
+    $cat_status = $cat_score >= 75 ? 'good' : ($cat_score >= 50 ? 'fair' : 'poor');
+    
+    $output .= '<div class="category-item">';
+    $output .= '<div class="category-header">';
+    $output .= '<span class="category-name">' . ucfirst($category) . '</span>';
+    $output .= '<span class="category-percentage ' . $cat_status . '">' . $cat_score . '%</span>';
+    $output .= '</div>';
+    $output .= '<div class="category-bar">';
+    $output .= '<div class="category-fill ' . $cat_status . '" style="width: ' . $cat_score . '%"></div>';
+    $output .= '</div>';
+    $output .= '</div>';
+  }
+  
+  $output .= '</div>';
+  
+  // Issues summary
+  if (!empty($analysis['issues'])) {
+    $output .= '<div class="issues-summary">';
+    $output .= '<h4>Issues (' . count($analysis['issues']) . ')</h4>';
+    
+    $issues_by_severity = [];
+    foreach ($analysis['issues'] as $issue) {
+      $severity = $issue['severity'] ?? 'Low';
+      $issues_by_severity[$severity] = ($issues_by_severity[$severity] ?? 0) + 1;
+    }
+    
+    foreach (['Critical', 'High', 'Medium', 'Low'] as $severity) {
+      if (isset($issues_by_severity[$severity])) {
+        $output .= '<div class="issue-count issue-' . strtolower($severity) . '">';
+        $output .= '<span class="count">' . $issues_by_severity[$severity] . '</span>';
+        $output .= '<span class="label">' . $severity . '</span>';
+        $output .= '</div>';
+      }
+    }
+    
+    $output .= '</div>';
+  }
+  
+  // Action buttons
+  $output .= '<div class="gate-actions">';
+  
+  $output .= '<button type="button" id="analyze-now" class="btn-analyze">';
+  $output .= $score > 0 ? 'Re-Analyse' : 'Analyse Content';
+  $output .= '</button>';
+  
+  $output .= '<button type="button" id="ask-ai-general" class="btn-ask-ai-general" title="Get AI suggestions for all content">';
+  $output .= '<span class="ai-icon">✨</span> Ask AI';
+  $output .= '</button>';
+
+  $output .= '</div>';
+  
+  $output .= '</div>';
+  
+  return $output;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for node.
+ */
+function edaitorial_real_time_checker_node_presave(EntityInterface $node) {
+  $config = \Drupal::config('edaitorial_real_time_checker.settings');
+  
+  if (!$config->get('enable_quality_gate')) {
+    return;
+  }
+  
+  // Check if user has permission to bypass the quality gate.
+  $current_user = \Drupal::currentUser();
+  if ($current_user->hasPermission('bypass edaitorial real time checker')) {
+    return;
+  }
+  
+  // Check if node is being published
+  if ($node->isPublished() && $node->hasField('moderation_state')) {
+    $moderation_state = $node->get('moderation_state')->value;
+    
+    if ($moderation_state === 'published') {
+      // Perform final check
+      $analyzer = \Drupal::service('edaitorial_real_time_checker.analyzer');
+      $analysis = $analyzer->analyzeContent(
+        $node->getTitle(),
+        $node->get('body')->value ?? '',
+        $node->bundle()
+      );
+      
+      $min_score = $config->get('min_score') ?: 80;
+      
+      if ($analysis['score'] < $min_score) {
+        // Display message to user
+        \Drupal::messenger()->addError(
+          t('Content cannot be published. Quality score: @score% (required: @min%). Please improve content quality before publishing.',
+            [
+              '@score' => $analysis['score'],
+              '@min' => $min_score,
+            ]
+          )
+        );
+        
+        // Log the attempt
+        \Drupal::logger('edaitorial_quality_gate')->warning(
+          'Attempted to publish node @nid with score @score% (minimum: @min%)',
+          [
+            '@nid' => $node->id(),
+            '@score' => $analysis['score'],
+            '@min' => $min_score,
+          ]
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Adds Ask AI links inline for each field.
+ */
+function _edaitorial_add_ask_ai_to_fields(&$form, $node) {
+  // Title field
+  if (isset($form['title'])) {
+    // Modify title label to include Ask AI link
+    if (isset($form['title']['widget'][0]['value']['#title'])) {
+      $original_title = $form['title']['widget'][0]['value']['#title'];
+      $form['title']['widget'][0]['value']['#title'] = Markup::create(
+        $original_title . ' <a href="#" class="ask-ai-link" data-field="title" title="Get AI suggestions"><span class="ai-icon">✨</span> Ask AI</a>'
+      );
+    }
+    
+    // Add result container below title
+    $form['title_ai_result'] = [
+      '#type' => 'markup',
+      '#markup' => '<div id="ai-result-title" class="ai-inline-result" style="display: none;"></div>',
+      '#weight' => $form['title']['#weight'] + 0.1,
+    ];
+  }
+  
+  // Body field
+  if (isset($form['body'])) {
+    // Modify body label to include Ask AI link
+    if (isset($form['body']['widget'][0]['#title'])) {
+      $original_title = $form['body']['widget'][0]['#title'];
+      $form['body']['widget'][0]['#title'] = Markup::create(
+        $original_title . ' <a href="#" class="ask-ai-link" data-field="body" title="Get AI suggestions"><span class="ai-icon">✨</span> Ask AI</a>'
+      );
+    }
+    
+    // Add result container below body
+    $form['body_ai_result'] = [
+      '#type' => 'markup',
+      '#markup' => '<div id="ai-result-body" class="ai-inline-result" style="display: none;"></div>',
+      '#weight' => $form['body']['#weight'] + 0.1,
+    ];
+  }
+}

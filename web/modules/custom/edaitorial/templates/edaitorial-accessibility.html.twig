@@ -1,0 +1,48 @@
+{#
+/**
+ * @file
+ * Template for the Accessibility page.
+ *
+ * Available variables:
+ * - metrics: Accessibility metrics data.
+ */
+#}
+
+<div class="edaitorial-accessibility">
+  <h2>{{ 'Accessibility Overview'|t }}</h2>
+  
+  <div class="a11y-score-header">
+    <div class="score-display">
+      <div class="score-value">{{ metrics.a11y_score }}</div>
+      <div class="score-label">{{ 'Accessibility Score'|t }}</div>
+    </div>
+    <div class="score-details">
+      <p>{{ 'Total issues:'|t }} {{ metrics.a11y_issues }}</p>
+      <p>{{ 'WCAG compliance is essential for inclusive web experiences'|t }}</p>
+    </div>
+  </div>
+
+  <div class="wcag-detailed">
+    <h3>{{ 'WCAG Level A Compliance'|t }}</h3>
+    {% for principle, data in metrics.wcag_level_a %}
+      <div class="compliance-bar-detailed">
+        <h4>{{ principle|capitalize }}</h4>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: {{ (data.passed / data.total * 100)|round }}%"></div>
+        </div>
+        <p>{{ data.passed }}/{{ data.total }} {{ 'tests passed'|t }}</p>
+      </div>
+    {% endfor %}
+
+    <h3>{{ 'WCAG Level AA Compliance'|t }}</h3>
+    {% for principle, data in metrics.wcag_level_aa %}
+      <div class="compliance-bar-detailed">
+        <h4>{{ principle|capitalize }}</h4>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: {{ (data.passed / data.total * 100)|round }}%"></div>
+        </div>
+        <p>{{ data.passed }}/{{ data.total }} {{ 'tests passed'|t }}</p>
+      </div>
+    {% endfor %}
+  </div>
+</div>

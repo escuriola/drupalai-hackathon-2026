@@ -1,0 +1,9 @@
+services:
+  edaitorial_real_time_checker.analyzer:
+    class: Drupal\edaitorial_real_time_checker\Service\RealTimeAnalyzer
+    arguments:
+      - '@plugin.manager.edaitorial_checker'
+      - '@config.factory'
+      - '@logger.factory'
+    tags:
+      - { name: 'service' }

@@ -1,0 +1,132 @@
+<?php
+
+/**
+ * @file
+ * edAItorial module - AI-powered editorial assistant for Drupal.
+ */
+
+use Drupal\edaitorial\EdaitorialTheme;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_theme().
+ */
+function edaitorial_theme($existing, $type, $theme, $path) {
+  return EdaitorialTheme::getThemeDefinitions();
+}
+
+/**
+ * Implements hook_page_attachments().
+ */
+function edaitorial_page_attachments(array &$attachments) {
+  $route_match = \Drupal::routeMatch();
+  $route_name = $route_match->getRouteName();
+  
+  // Only add viewport meta for edaitorial pages
+  if ($route_name && strpos($route_name, 'edaitorial.') === 0) {
+    $attachments['#attached']['html_head'][] = [
+      [
+        '#tag' => 'meta',
+        '#attributes' => [
+          'name' => 'viewport',
+          'content' => 'width=device-width, initial-scale=1, shrink-to-fit=no',
+        ],
+      ],
+      'edaitorial_viewport',
+    ];
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for node.
+ */
+function edaitorial_node_insert(NodeInterface $node) {
+  // Invalidate caches asynchronously to avoid slowing down node save
+  _edaitorial_schedule_cache_invalidation();
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for node.
+ */
+function edaitorial_node_update(NodeInterface $node) {
+  // Invalidate caches asynchronously to avoid slowing down node save
+  _edaitorial_schedule_cache_invalidation();
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for node.
+ */
+function edaitorial_node_delete(NodeInterface $node) {
+  // Invalidate immediately for deletes
+  _edaitorial_invalidate_caches();
+}
+
+/**
+ * Schedule cache invalidation to run later (non-blocking).
+ */
+function _edaitorial_schedule_cache_invalidation() {
+  // Use static flag to invalidate only once per request
+  $invalidated = &drupal_static(__FUNCTION__, FALSE);
+  
+  if (!$invalidated) {
+    // Register shutdown function to invalidate at end of request
+    drupal_register_shutdown_function('_edaitorial_invalidate_caches');
+    $invalidated = TRUE;
+  }
+}
+
+/**
+ * Helper function to invalidate edaitorial caches.
+ */
+function _edaitorial_invalidate_caches() {
+  try {
+    $cache_invalidator = \Drupal::service('edaitorial.cache_invalidator');
+    $cache_invalidator->invalidateCacheTags();
+  }
+  catch (\Exception $e) {
+    // Silently fail to avoid breaking page loads
+    \Drupal::logger('edaitorial')->error('Cache invalidation failed: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function edaitorial_cron() {
+  // Save current metrics for historical comparison
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $state = \Drupal::state();
+  $logger = \Drupal::logger('edaitorial');
+  
+  try {
+    $pages_count = $entity_type_manager
+      ->getStorage('node')
+      ->getQuery()
+      ->condition('status', 1)
+      ->accessCheck(FALSE)
+      ->count()
+      ->execute();
+    
+    // Get analyzers
+    $seo_analyzer = \Drupal::service('edaitorial.seo_analyzer');
+    $a11y_analyzer = \Drupal::service('edaitorial.accessibility_analyzer');
+    
+    $state->set('edaitorial.previous_metrics', [
+      'pages_crawled' => $pages_count,
+      'seo_issues' => $seo_analyzer->countSeoIssues(),
+      'a11y_issues' => $a11y_analyzer->countAccessibilityIssues(),
+      'timestamp' => time(),
+    ]);
+    
+    $logger->info('Metrics updated: @pages pages analyzed', [
+      '@pages' => $pages_count,
+    ]);
+  }
+  catch (\Exception $e) {
+    $logger->error('Cron metrics update failed: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+  }
+}

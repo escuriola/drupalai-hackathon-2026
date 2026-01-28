@@ -1,0 +1,16 @@
+enable_quality_gate: true
+min_score: 80
+enabled_content_types:
+  - article
+  - page
+enabled_checks:
+  seo: true
+  typos: true
+  links: true
+  accessibility: true
+  content: true
+block_publishing_below_threshold: true
+show_category_breakdown: true
+# Cache settings for consistent results
+cache_analysis_results: true
+cache_ttl: 3600  # 1 hour in seconds

@@ -1,0 +1,182 @@
+{#
+/**
+ * @file
+ * Template for the Content Audit Detail page.
+ *
+ * Available variables:
+ * - node: The node entity.
+ * - audit_data: Detailed audit data for the node.
+ */
+#}
+
+<div class="edaitorial-content-audit-detail">
+  <div class="audit-detail-header">
+    <a href="/admin/config/content/edaitorial/content-audit" class="back-link">← {{ 'Back to Content Audit'|t }}</a>
+    
+    <div class="detail-header-content">
+      <div class="detail-score-card">
+        <div class="score-circle-large score-circle--{{ audit_data.score_class }}">
+          <svg viewBox="0 0 200 200">
+            <circle class="score-bg" cx="100" cy="100" r="90"></circle>
+            <circle class="score-fill" cx="100" cy="100" r="90" 
+              style="stroke-dashoffset: {{ 565 - (565 * audit_data.score / 100) }}"></circle>
+          </svg>
+          <div class="score-content">
+            <div class="score-value-large">{{ audit_data.score }}</div>
+            <div class="score-label">{{ 'Quality Score'|t }}</div>
+          </div>
+        </div>
+        
+        <div class="score-description">
+          {% if audit_data.score >= 90 %}
+            <h4>{{ 'Excellent'|t }}</h4>
+            <p>{{ 'This content meets high quality standards.'|t }}</p>
+          {% elseif audit_data.score >= 75 %}
+            <h4>{{ 'Good'|t }}</h4>
+            <p>{{ 'This content is solid with minor improvements needed.'|t }}</p>
+          {% elseif audit_data.score >= 50 %}
+            <h4>{{ 'Fair'|t }}</h4>
+            <p>{{ 'This content needs several improvements.'|t }}</p>
+          {% elseif audit_data.score >= 25 %}
+            <h4>{{ 'Poor'|t }}</h4>
+            <p>{{ 'This content has significant issues to address.'|t }}</p>
+          {% else %}
+            <h4>{{ 'Critical'|t }}</h4>
+            <p>{{ 'This content requires immediate attention.'|t }}</p>
+          {% endif %}
+        </div>
+      </div>
+      
+      <div class="detail-meta">
+        <h1 class="detail-title">{{ node.title.value }}</h1>
+        <div class="detail-badges">
+          {% if audit_data.status %}
+            <span class="badge badge-published">{{ 'Published'|t }}</span>
+          {% else %}
+            <span class="badge badge-draft">{{ 'Draft'|t }}</span>
+          {% endif %}
+          <span class="badge badge-type">{{ audit_data.type }}</span>
+          <span class="badge badge-issues">{{ audit_data.issue_count }} {{ 'issues'|t }}</span>
+        </div>
+        
+        <div class="detail-actions">
+          <a href="/node/{{ audit_data.id }}/edit" class="button button--primary">{{ 'Edit Content'|t }}</a>
+          <a href="/node/{{ audit_data.id }}" class="button button--secondary">{{ 'View Content'|t }}</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  {% if audit_data.issue_count == 0 %}
+    <div class="no-issues-message">
+      <h3>{{ 'No Issues Found!'|t }}</h3>
+      <p>{{ 'This content passed all quality checks. Great job!'|t }}</p>
+    </div>
+  {% else %}
+    
+    {# Issues by Severity #}
+    <div class="issues-section">
+      <h2>{{ 'Issues by Severity'|t }}</h2>
+      
+      <div class="severity-summary">
+        {% for severity, issues in audit_data.issues_by_severity %}
+          {% if issues|length > 0 %}
+            <div class="severity-card severity-card--{{ severity|lower }}">
+              <div class="severity-content">
+                <div class="severity-count">{{ issues|length }}</div>
+                <div class="severity-label">{{ severity }}</div>
+              </div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      
+      {% for severity, issues in audit_data.issues_by_severity %}
+        {% if issues|length > 0 %}
+          <div class="severity-group">
+            <h3 class="severity-title severity-title--{{ severity|lower }}">
+              {{ severity }} {{ 'Issues'|t }} ({{ issues|length }})
+            </h3>
+            <div class="issues-list">
+              {% for issue in issues %}
+                <div class="issue-item issue-item--{{ severity|lower }}">
+                  <div class="issue-header">
+                    <span class="issue-badge badge badge-{{ issue.type|lower }}">{{ issue.type }}</span>
+                    <span class="issue-severity">{{ severity }}</span>
+                    <span class="issue-impact">{{ 'Impact:'|t }} {{ issue.impact }}</span>
+                  </div>
+                  <div class="issue-description">
+                    {{ issue.description }}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    
+    {# Issues by Type #}
+    <div class="issues-section">
+      <h2>{{ 'Issues by Category'|t }}</h2>
+      
+      <div class="type-tabs">
+        {% set first = true %}
+        {% for type, issues in audit_data.issues_by_type %}
+          <button class="type-tab {{ first ? 'active' : '' }}" data-type="{{ type|lower }}">
+            {{ type }} ({{ issues|length }})
+          </button>
+          {% set first = false %}
+        {% endfor %}
+      </div>
+      
+      {% set first = true %}
+      {% for type, issues in audit_data.issues_by_type %}
+        <div class="type-content {{ first ? 'active' : '' }}" data-type="{{ type|lower }}">
+          <div class="issues-list">
+            {% for issue in issues %}
+              <div class="issue-item issue-item--{{ issue.severity|lower }}">
+                <div class="issue-header">
+                  <span class="issue-severity-badge severity-badge--{{ issue.severity|lower }}">{{ issue.severity }}</span>
+                  <span class="issue-impact">{{ 'Impact:'|t }} {{ issue.impact }}</span>
+                </div>
+                <div class="issue-description">
+                  {{ issue.description }}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% set first = false %}
+      {% endfor %}
+    </div>
+    
+  {% endif %}
+  
+  <div class="audit-detail-footer">
+    <a href="/admin/config/content/edaitorial/content-audit" class="button button--secondary">← {{ 'Back to Content Audit'|t }}</a>
+    <a href="/node/{{ audit_data.id }}/edit" class="button button--primary">{{ 'Edit Content'|t }}</a>
+  </div>
+</div>
+
+<script>
+// Simple tab switching
+document.addEventListener('DOMContentLoaded', function() {
+  const tabs = document.querySelectorAll('.type-tab');
+  const contents = document.querySelectorAll('.type-content');
+  
+  tabs.forEach(tab => {
+    tab.addEventListener('click', function() {
+      const type = this.dataset.type;
+      
+      // Remove active class from all tabs and contents
+      tabs.forEach(t => t.classList.remove('active'));
+      contents.forEach(c => c.classList.remove('active'));
+      
+      // Add active class to clicked tab and corresponding content
+      this.classList.add('active');
+      document.querySelector(`.type-content[data-type="${type}"]`).classList.add('active');
+    });
+  });
+});
+</script>
