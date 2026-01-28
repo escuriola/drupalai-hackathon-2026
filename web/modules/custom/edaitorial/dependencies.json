@@ -1,0 +1,331 @@
+{
+  "module": {
+    "name": "edaitorial",
+    "version": "1.0.0",
+    "description": "AI-powered editorial assistant with SEO and Accessibility insights",
+    "homepage": "https://github.com/Maxfire/edAItorial"
+  },
+  "system_requirements": {
+    "php": {
+      "minimum": "8.1",
+      "recommended": "8.2",
+      "extensions": [
+        "json",
+        "curl",
+        "mbstring",
+        "xml",
+        "dom"
+      ]
+    },
+    "drupal": {
+      "minimum": "10.0",
+      "maximum": "11.x",
+      "core_version_requirement": "^10 || ^11"
+    },
+    "server": {
+      "memory_limit": "256M",
+      "max_execution_time": "60",
+      "upload_max_filesize": "20M"
+    }
+  },
+  "composer_dependencies": {
+    "required": {
+      "drupal/ai": {
+        "version": "^1.2",
+        "description": "Drupal AI module - provides AI integration layer",
+        "repository": "https://www.drupal.org/project/ai",
+        "installation_command": "composer require drupal/ai",
+        "note": "If using Drupal CMS 2.x, this module is already included (version ^1.2.6)"
+      }
+    },
+    "suggested": {
+      "drupal/pathauto": {
+        "version": "^1.11",
+        "description": "Automatic URL alias generation",
+        "repository": "https://www.drupal.org/project/pathauto",
+        "installation_command": "composer require drupal/pathauto:^1.11",
+        "reason": "Better URL management for SEO"
+      },
+      "drupal/metatag": {
+        "version": "^2.0",
+        "description": "Meta tag management",
+        "repository": "https://www.drupal.org/project/metatag",
+        "installation_command": "composer require drupal/metatag:^2.0",
+        "reason": "Enhanced meta tag control for SEO optimization"
+      },
+      "drupal/redirect": {
+        "version": "^1.9",
+        "description": "Redirect management",
+        "repository": "https://www.drupal.org/project/redirect",
+        "installation_command": "composer require drupal/redirect:^1.9",
+        "reason": "Manage redirects for broken links detection"
+      },
+      "drupal/xmlsitemap": {
+        "version": "^1.5",
+        "description": "XML sitemap generation",
+        "repository": "https://www.drupal.org/project/xmlsitemap",
+        "installation_command": "composer require drupal/xmlsitemap:^1.5",
+        "reason": "Generate XML sitemaps for better SEO"
+      }
+    }
+  },
+  "drupal_dependencies": {
+    "core": [
+      {
+        "module": "node",
+        "required": true,
+        "description": "Core Node module for content management"
+      },
+      {
+        "module": "user",
+        "required": true,
+        "description": "Core User module for permissions"
+      },
+      {
+        "module": "system",
+        "required": true,
+        "description": "Core System module"
+      }
+    ],
+    "contrib": [
+      {
+        "module": "ai",
+        "required": true,
+        "version": "^1.0",
+        "description": "Drupal AI integration module",
+        "drush_command": "drush en ai -y"
+      }
+    ]
+  },
+  "ai_provider_requirements": {
+    "description": "AI provider configuration needed for the module to function",
+    "providers": {
+      "amazeeio": {
+        "provider_id": "amazeeio",
+        "model": "mistral-large-latest",
+        "required_settings": [
+          "api_key"
+        ],
+        "configuration_path": "/admin/config/system/ai/providers",
+        "recommended": true,
+        "notes": "Default provider used in development"
+      },
+      "openai": {
+        "provider_id": "openai",
+        "model": "gpt-4",
+        "required_settings": [
+          "api_key",
+          "organization_id"
+        ],
+        "configuration_path": "/admin/config/system/ai/providers",
+        "notes": "Alternative provider - requires OpenAI account"
+      },
+      "anthropic": {
+        "provider_id": "anthropic",
+        "model": "claude-3-opus",
+        "required_settings": [
+          "api_key"
+        ],
+        "configuration_path": "/admin/config/system/ai/providers",
+        "notes": "Alternative provider - requires Anthropic account"
+      }
+    }
+  },
+  "installation": {
+    "important_note": "Run all commands from your Drupal ROOT directory, not from the module directory",
+    "automated_install": {
+      "description": "Automated installation steps for edAItorial module",
+      "steps": [
+        {
+          "step": 1,
+          "name": "Check/Install Composer dependencies",
+          "commands": [
+            "composer show drupal/ai || composer require drupal/ai"
+          ],
+          "description": "Check if drupal/ai is installed, install if needed. Note: Already included in Drupal CMS 2.x",
+          "note": "Skip if using Drupal CMS 2.x - drupal/ai is already included"
+        },
+        {
+          "step": 2,
+          "name": "Enable AI module",
+          "commands": [
+            "drush en ai -y"
+          ],
+          "description": "Enable the Drupal AI module"
+        },
+        {
+          "step": 3,
+          "name": "Configure AI provider",
+          "commands": [
+            "drush config:set ai.settings default_provider amazeeio -y",
+            "drush config:set ai.settings providers.amazeeio.configuration.model mistral-large-latest -y"
+          ],
+          "description": "Configure default AI provider (manual API key setup required)"
+        },
+        {
+          "step": 4,
+          "name": "Enable edAItorial module",
+          "commands": [
+            "drush en edaitorial -y"
+          ],
+          "description": "Enable the edAItorial module"
+        },
+        {
+          "step": 5,
+          "name": "Clear cache",
+          "commands": [
+            "drush cr"
+          ],
+          "description": "Clear Drupal cache"
+        },
+        {
+          "step": 6,
+          "name": "Verify installation",
+          "commands": [
+            "drush pm:list --status=enabled --filter=edaitorial",
+            "drush pm:list --status=enabled --filter=ai"
+          ],
+          "description": "Verify both modules are enabled"
+        }
+      ]
+    },
+    "manual_install": {
+      "description": "Manual installation steps",
+      "steps": [
+        "1. Run: composer require drupal/ai:^1.0",
+        "2. Visit: /admin/modules",
+        "3. Enable 'Drupal AI' module",
+        "4. Visit: /admin/config/system/ai/providers",
+        "5. Configure your AI provider (API key required)",
+        "6. Return to: /admin/modules",
+        "7. Enable 'edAItorial' module",
+        "8. Visit: /admin/config/content/edaitorial"
+      ]
+    },
+    "one_line_install": {
+      "description": "Single command to install everything (requires manual API key setup)",
+      "command": "drush en ai edaitorial -y && drush cr",
+      "note": "If drupal/ai is not installed, run: composer require drupal/ai && drush en ai edaitorial -y && drush cr",
+      "drupal_cms_note": "For Drupal CMS 2.x users, drupal/ai is already installed, just enable the modules"
+    }
+  },
+  "post_install": {
+    "configuration": {
+      "description": "Post-installation configuration steps",
+      "steps": [
+        {
+          "name": "Configure AI Provider",
+          "path": "/admin/config/system/ai/providers",
+          "required": true,
+          "description": "Add API key for your chosen AI provider"
+        },
+        {
+          "name": "Configure edAItorial Settings",
+          "path": "/admin/config/content/edaitorial/settings",
+          "required": false,
+          "description": "Customize AI prompts and module settings"
+        },
+        {
+          "name": "Set Permissions",
+          "path": "/admin/people/permissions",
+          "required": true,
+          "description": "Grant 'view edaitorial' and 'administer edaitorial' permissions"
+        },
+        {
+          "name": "Create Sample Content",
+          "path": "/admin/content/add",
+          "required": false,
+          "description": "Create some content to test the module"
+        }
+      ]
+    },
+    "verification": {
+      "description": "Steps to verify installation is working",
+      "steps": [
+        "1. Visit: /admin/config/content/edaitorial",
+        "2. Dashboard should load in <1 second",
+        "3. Visit: /admin/config/content/edaitorial/content-audit",
+        "4. Content list should display",
+        "5. Click on any content item",
+        "6. AI analysis should complete in 3-5 seconds"
+      ]
+    }
+  },
+  "permissions": {
+    "required": [
+      {
+        "name": "view edaitorial",
+        "description": "View edAItorial dashboards and reports",
+        "roles": ["content_editor", "administrator"]
+      },
+      {
+        "name": "administer edaitorial",
+        "description": "Configure edAItorial settings and prompts",
+        "roles": ["administrator"]
+      }
+    ]
+  },
+  "troubleshooting": {
+    "common_issues": [
+      {
+        "issue": "Module doesn't appear in module list",
+        "solution": "Clear cache: drush cr"
+      },
+      {
+        "issue": "AI analysis fails",
+        "solution": "Check AI provider configuration and API key at /admin/config/system/ai/providers"
+      },
+      {
+        "issue": "Dashboard shows errors",
+        "solution": "Ensure 'ai' module is enabled and configured"
+      },
+      {
+        "issue": "Slow performance",
+        "solution": "Check server memory and PHP max_execution_time settings"
+      }
+    ]
+  },
+  "scripts": {
+    "install_all": "composer require drupal/ai:^1.0 && drush en ai edaitorial -y && drush cr",
+    "install_with_suggested": "composer require drupal/ai:^1.0 drupal/pathauto:^1.11 drupal/metatag:^2.0 drupal/redirect:^1.9 && drush en ai edaitorial pathauto metatag redirect -y && drush cr",
+    "uninstall": "drush pm:uninstall edaitorial -y && drush cr",
+    "reinstall": "drush pm:uninstall edaitorial -y && drush en edaitorial -y && drush cr",
+    "update": "composer update drupal/ai maxfire/edaitorial && drush updb -y && drush cr"
+  },
+  "api_keys": {
+    "description": "API keys needed for AI providers",
+    "amazeeio": {
+      "description": "Amazee.io / Mistral API key",
+      "signup_url": "https://mistral.ai/",
+      "cost": "Pay-per-use, ~$0.002 per 1K input tokens",
+      "configuration": "Set at /admin/config/system/ai/providers"
+    },
+    "openai": {
+      "description": "OpenAI API key",
+      "signup_url": "https://platform.openai.com/signup",
+      "cost": "Pay-per-use, varies by model",
+      "configuration": "Set at /admin/config/system/ai/providers"
+    },
+    "anthropic": {
+      "description": "Anthropic (Claude) API key",
+      "signup_url": "https://www.anthropic.com/",
+      "cost": "Pay-per-use, varies by model",
+      "configuration": "Set at /admin/config/system/ai/providers"
+    }
+  },
+  "resources": {
+    "documentation": [
+      "README.md - Module overview and features",
+      "QUICKSTART.md - Quick start guide",
+      "ARCHITECTURE.md - Technical architecture",
+      "BATCH_AI_OPTIMIZATION.md - Token optimization details",
+      "PLUGINS_GUIDE.md - Plugin development guide"
+    ],
+    "links": {
+      "github": "https://github.com/Maxfire/edAItorial",
+      "drupal_ai": "https://www.drupal.org/project/ai",
+      "mistral_ai": "https://mistral.ai/",
+      "hackathon": "https://www.drupal.org/community/hackathons"
+    }
+  }
+}

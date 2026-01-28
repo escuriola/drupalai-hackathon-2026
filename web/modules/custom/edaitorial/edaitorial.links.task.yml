@@ -27,3 +27,9 @@ edaitorial.settings:
   title: 'Settings'
   base_route: edaitorial.dashboard
   weight: 100
+
+edaitorial_real_time_checker.settings:
+  route_name: edaitorial_real_time_checker.settings
+  title: 'Quality Gate Settings'
+  base_route: edaitorial.dashboard
+  weight: 101

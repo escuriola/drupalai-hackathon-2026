@@ -1,5 +1,5 @@
 quality_gate:
-  version: 8.1.0
+  version: 9.4.0
   css:
     theme:
       css/quality-gate.css: { preprocess: false }
