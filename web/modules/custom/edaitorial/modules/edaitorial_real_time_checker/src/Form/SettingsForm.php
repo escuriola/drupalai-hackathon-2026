@@ -47,8 +47,8 @@ class SettingsForm extends ConfigFormBase {
     $form['general']['min_score'] = [
       '#type' => 'number',
       '#title' => $this->t('Minimum score to publish (%)'),
-      '#description' => $this->t('Content must reach this score before it can be published. Recommended: 88%.'),
-      '#default_value' => $config->get('min_score') ?: 88,
+      '#description' => $this->t('Content must reach this score before it can be published. Recommended: 80%.'),
+      '#default_value' => $config->get('min_score') ?: 80,
       '#min' => 0,
       '#max' => 100,
       '#step' => 1,

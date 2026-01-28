@@ -1,0 +1,1849 @@
+/**
+ * @file
+ * Quality Gate functionality.
+ */
+
+(function ($, Drupal, drupalSettings, once) {
+  'use strict';
+
+  /**
+   * Quality Gate behavior.
+   */
+  Drupal.behaviors.edaitorialQualityGate = {
+    attach: function (context, settings) {
+      const gateSettings = settings.edaitorialQualityGate || {};
+      
+      console.log('Quality Gate: behavior attaching', {
+        enabled: gateSettings.enabled,
+        context: context,
+        hasButton: $('#analyze-now', context).length > 0
+      });
+      
+      if (!gateSettings.enabled) {
+        console.log('Quality Gate: disabled in settings');
+        return;
+      }
+      
+      // Debug: Check for previous analysis in DOM
+      console.log('Quality Gate: Node ID =', gateSettings.nodeId);
+      console.log('Quality Gate: Is new node =', gateSettings.isNewNode);
+      
+      const $lastAnalysis = $('.gate-previous-analysis');
+      if ($lastAnalysis.length > 0) {
+        console.log('Quality Gate: ✅ Previous analysis section found in DOM');
+        const overallScore = $lastAnalysis.find('.sidebar-score-value').text();
+        console.log('Quality Gate: Previous overall score from DOM:', overallScore);
+      } else {
+        console.log('Quality Gate: ⚠️  No previous analysis section in DOM (first analysis not run yet)');
+      }
+      
+      const $scoreValueBig = $('.score-value-big');
+      if ($scoreValueBig.length > 0) {
+        console.log('Quality Gate: Current displayed score:', $scoreValueBig.text());
+      }
+      
+      // Initialize: Disable publish status field until analysis is done
+      initializePublishStatus();
+
+      // Method 1: Try with once() on button
+      const buttons = once('quality-gate-analyze', '#analyze-now', context);
+      console.log('Quality Gate: once() found', buttons.length, 'buttons');
+      
+      if (buttons.length > 0) {
+        console.log('Quality Gate: attaching direct click handler');
+        $(buttons).on('click', function(e) {
+          console.log('Quality Gate: DIRECT button clicked!');
+          e.preventDefault();
+          e.stopPropagation();
+          analyzeContent();
+        });
+      }
+
+      // Method 2: Event delegation (fallback)
+      const containers = once('quality-gate-delegation', '.quality-gate-content', context);
+      if (containers.length > 0) {
+        console.log('Quality Gate: attaching delegated event handler to', containers.length, 'containers');
+        $(containers).on('click', '#analyze-now', function(e) {
+          console.log('Quality Gate: DELEGATED button clicked!');
+          e.preventDefault();
+          e.stopPropagation();
+          analyzeContent();
+        });
+      }
+
+      // Method 3: Direct jQuery binding (ultra fallback for debugging)
+      // This runs only once per page load
+      if (!window.qualityGateInitialized) {
+        window.qualityGateInitialized = true;
+        console.log('Quality Gate: adding document-level delegated handler');
+        $(document).on('click', '#analyze-now', function(e) {
+          console.log('Quality Gate: DOCUMENT-LEVEL button clicked!');
+          e.preventDefault();
+          e.stopPropagation();
+          analyzeContent();
+        });
+        
+        // Ask AI button handler (Quality Gate tab - old)
+        $(document).on('click', '#ask-ai', function(e) {
+          console.log('Quality Gate: ASK AI button clicked!');
+          e.preventDefault();
+          e.stopPropagation();
+          openAiAssistant();
+        });
+        
+        // Ask AI inline link handlers (new - per field)
+        $(document).on('click', '.ask-ai-link', function(e) {
+          console.log('Inline Ask AI link clicked!');
+          e.preventDefault();
+          e.stopPropagation();
+          const field = $(this).data('field');
+          openAiAssistantInline(field);
+        });
+        
+        // Modal close handlers
+        $(document).on('click', '.ai-modal-close', function(e) {
+          e.preventDefault();
+          closeAiModal();
+        });
+        
+        $(document).on('click', '.ai-btn-cancel', function(e) {
+          e.preventDefault();
+          closeAiModal();
+        });
+        
+        // Click outside modal to close
+        $(document).on('click', '.ai-assistant-modal', function(e) {
+          if ($(e.target).hasClass('ai-assistant-modal')) {
+            closeAiModal();
+          }
+        });
+        
+        // Replace button handler
+        $(document).on('click', '.ai-btn-replace', function(e) {
+          e.preventDefault();
+          replaceWithAiSuggestion();
+        });
+      }
+
+      /**
+       * Enables publishing immediately (for nodes with previous sufficient analysis).
+       */
+      function enablePublishingImmediately(score, minScore) {
+        console.log('Quality Gate: Enabling publishing immediately - score:', score, 'minScore:', minScore);
+        
+        const $statusWrapper = $('#edit-status-wrapper');
+        const $statusCheckbox = $(
+          '#edit-status, ' +
+          '#edit-status-value, ' +
+          'input[name="status[value]"], ' +
+          'input[type="checkbox"][id*="status"]'
+        ).filter(':checkbox');
+        const $publishOption = $('[name="moderation_state[0][state]"] option[value="published"]');
+        
+        // Enable status checkbox
+        if ($statusCheckbox.length) {
+          console.log('Quality Gate: Enabling', $statusCheckbox.length, 'checkboxes');
+          $statusCheckbox.each(function() {
+            $(this).prop('disabled', false);
+            $(this).removeAttr('disabled');
+            $(this).removeClass('quality-gate-disabled');
+          });
+          
+          $statusWrapper.removeClass('quality-gate-locked');
+          
+          // Add success notice
+          if (!$('#quality-gate-status-notice').length && $statusWrapper.length) {
+            $statusWrapper.append(
+              '<div id="quality-gate-status-notice" class="description" style="color: #2e7d32; border-left: 3px solid #4caf50; padding: 12px; background: linear-gradient(135deg, #f1f8f4, #ffffff); margin-top: 8px; border-radius: 4px;">' +
+              '✓ <strong>Quality score: ' + score + '%</strong> (required: ' + minScore + '%). Ready to publish.' +
+              '</div>'
+            );
+          }
+        }
+        
+        // Enable "Published" option in moderation state
+        if ($publishOption.length) {
+          $publishOption.prop('disabled', false);
+          $publishOption.text($publishOption.text().replace(/ \(.*\)/, ''));
+        }
+      }
+      
+      /**
+       * Initializes the publish status field (disabled by default if blocking enabled).
+       */
+      function initializePublishStatus() {
+        // Convert to boolean explicitly (handles 0, false, null, undefined)
+        console.log('Quality Gate: Raw blockPublishing value from settings:', gateSettings.blockPublishing, 'type:', typeof gateSettings.blockPublishing);
+        const blockPublishing = Boolean(gateSettings.blockPublishing);
+        console.log('Quality Gate: Converted blockPublishing to boolean:', blockPublishing);
+        
+        const isNewNode = gateSettings.isNewNode || false;
+        const isPublished = gateSettings.isPublished || false;
+        const hasPreviousAnalysis = gateSettings.hasPreviousAnalysis || false;
+        const currentScore = gateSettings.currentScore || 0;
+        const minScore = gateSettings.minScore || 80;
+        const scoreSufficient = currentScore >= minScore;
+        
+        if (!blockPublishing) {
+          console.log('Quality Gate: ✅ Publishing blocking is DISABLED - showing informative message only');
+          
+          // Show informative message (not blocking) when blocking is disabled
+          const $statusWrapper = $('#edit-status-wrapper');
+          if ($statusWrapper.length && !$('#quality-gate-status-notice').length) {
+            let noticeText = '';
+            if (hasPreviousAnalysis && currentScore > 0 && !scoreSufficient) {
+              noticeText = '<strong>Quality score: ' + currentScore + '%</strong> (recommended: ' + minScore + '% or higher). ' +
+                'Whilst publication is permitted, achieving the recommended score ensures optimal content quality.';
+            } else if (!hasPreviousAnalysis || currentScore === 0) {
+              noticeText = '<strong>Quality recommendation:</strong> Analyse your content to ensure it meets quality standards. A score of <strong>' + minScore + '% or higher</strong> is recommended.';
+            } else {
+              // Score is sufficient
+              noticeText = '<strong>Quality score: ' + currentScore + '%</strong> (recommended: ' + minScore + '%+). Content quality is good.';
+            }
+            
+            // Determine message style based on score
+            let messageStyle = '';
+            if (!hasPreviousAnalysis || currentScore === 0) {
+              // No analysis yet - neutral/info style
+              messageStyle = 'color: #0c5460; border-left-color: #17a2b8; background: #d1ecf1;';
+            } else if (!scoreSufficient) {
+              // Low score - warning style (orange)
+              messageStyle = 'color: #856404; border-left-color: #ffc107; background: #fff3cd;';
+            } else {
+              // Good score - success style (green)
+              messageStyle = 'color: #155724; border-left-color: #28a745; background: #d4edda;';
+            }
+            
+            $statusWrapper.append(
+              '<div id="quality-gate-status-notice" class="description" style="' + messageStyle + ' padding: 10px 14px; margin-top: 8px; border-radius: 4px; border: 1px solid; border-left-width: 3px;">' +
+              noticeText +
+              '</div>'
+            );
+          }
+          
+          return; // Don't apply any blocking
+        }
+        
+        console.log('Quality Gate: Initializing', {
+          isNewNode: isNewNode,
+          isPublished: isPublished,
+          hasPreviousAnalysis: hasPreviousAnalysis,
+          currentScore: currentScore,
+          minScore: minScore,
+          scoreSufficient: scoreSufficient
+        });
+        
+        // Store state in global variable for mutation observer
+        window.qualityGateAnalysisComplete = hasPreviousAnalysis;
+        window.qualityGateScoreSufficient = scoreSufficient;
+        window.qualityGateIsNewNode = isNewNode;
+        window.qualityGateIsPublished = isPublished;
+        window.qualityGateObservers = []; // Store observers so we can disconnect them later
+        window.qualityGateIntervals = []; // Store intervals so we can clear them later
+        
+        // If there's a previous analysis with sufficient score, enable immediately
+        if (hasPreviousAnalysis && scoreSufficient) {
+          console.log('Quality Gate: Previous analysis with sufficient score detected - enabling publish immediately');
+          enablePublishingImmediately(currentScore, minScore);
+          return; // Don't set up blocking mechanisms
+        }
+        
+        // Find all possible selectors for status checkbox - try multiple variations
+        const $statusWrapper = $('#edit-status-wrapper');
+        const $statusCheckbox = $(
+          '#edit-status, ' +
+          '#edit-status-value, ' +
+          'input[name="status[value]"], ' +
+          'input[type="checkbox"][id*="status"]'
+        ).filter(':checkbox');
+        const $moderationSelect = $('[name="moderation_state[0][state]"]');
+        const $publishOption = $('[name="moderation_state[0][state]"] option[value="published"]');
+        
+        console.log('Quality Gate: Found elements:', {
+          statusCheckbox: $statusCheckbox.length,
+          statusCheckboxIds: $statusCheckbox.map(function() { return this.id; }).get(),
+          moderationSelect: $moderationSelect.length,
+          publishOption: $publishOption.length
+        });
+        
+        // Disable status checkbox (for non-moderated content)
+        if ($statusCheckbox.length) {
+          console.log('Quality Gate: Processing status checkbox');
+          
+          // Function to force disable and uncheck for new nodes
+          const forceDisable = function() {
+            $statusCheckbox.each(function() {
+              const $checkbox = $(this);
+              const currentlyChecked = $checkbox.prop('checked');
+              const currentlyDisabled = $checkbox.prop('disabled');
+              
+              // For new nodes: always force unchecked and disabled
+              if (isNewNode) {
+                if (!currentlyDisabled || currentlyChecked) {
+                  console.log('Quality Gate: New node - forcing unchecked and disabled');
+                  $checkbox.prop('disabled', true);
+                  $checkbox.prop('checked', false);
+                  $checkbox.attr('disabled', 'disabled');
+                  $checkbox.addClass('quality-gate-disabled');
+                }
+              }
+              // For published nodes: keep checked but disabled (read-only) until analysis
+              else if (isPublished && !window.qualityGateAnalysisComplete) {
+                if (!currentlyDisabled) {
+                  console.log('Quality Gate: Published node - keeping checked but disabling changes');
+                  $checkbox.prop('disabled', true);
+                  $checkbox.attr('disabled', 'disabled');
+                  $checkbox.addClass('quality-gate-disabled');
+                  // Keep it checked as it's already published
+                }
+              }
+              // For unpublished existing nodes: disable and uncheck
+              else if (!isPublished && !window.qualityGateScoreSufficient) {
+                if (!currentlyDisabled || currentlyChecked) {
+                  console.log('Quality Gate: Unpublished node - forcing unchecked and disabled');
+                  $checkbox.prop('disabled', true);
+                  $checkbox.prop('checked', false);
+                  $checkbox.attr('disabled', 'disabled');
+                  $checkbox.addClass('quality-gate-disabled');
+                }
+              }
+            });
+          };
+          
+          // Initial disable
+          forceDisable();
+          
+          // Prevent any clicks
+          $statusCheckbox.on('click.qualitygate change.qualitygate', function(e) {
+            if (!window.qualityGateScoreSufficient) {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              let message = '';
+              if (isNewNode) {
+                message = 'New content cannot be published without analysis. Please click "Analyze Content" in the Quality Gate tab and achieve a score of at least ' + (gateSettings.minScore || 80) + '%.';
+              } else if (isPublished) {
+                message = 'Content publication status is locked. Please analyze the content first and achieve a score of at least ' + (gateSettings.minScore || 80) + '% to make changes.';
+              } else {
+                message = 'Publishing is locked. Please analyze your content first in the Quality Gate tab and achieve a score of at least ' + (gateSettings.minScore || 80) + '%.';
+              }
+              
+              alert(message);
+              return false;
+            }
+          });
+          
+          // Monitor for external changes using MutationObserver
+          $statusCheckbox.each(function() {
+            const checkbox = this;
+            const observer = new MutationObserver(function(mutations) {
+              mutations.forEach(function(mutation) {
+                if (mutation.attributeName === 'disabled' && !window.qualityGateScoreSufficient) {
+                  // Something removed the disabled attribute - put it back
+                  console.log('Quality Gate: Detected external enable attempt, blocking it');
+                  forceDisable();
+                }
+              });
+            });
+            
+            observer.observe(checkbox, {
+              attributes: true,
+              attributeFilter: ['disabled']
+            });
+            
+            // Store observer so we can disconnect it later
+            window.qualityGateObservers.push(observer);
+          });
+          
+          // Also monitor changes every 500ms as backup
+          const intervalId = setInterval(forceDisable, 500);
+          window.qualityGateIntervals.push(intervalId);
+          
+          // Add visual indicator
+          if (!$('#quality-gate-status-notice').length && $statusWrapper.length) {
+            let noticeText = '';
+            if (hasPreviousAnalysis && currentScore > 0) {
+              // Has previous analysis but score is insufficient
+              noticeText = '<strong>Quality score: ' + currentScore + '%</strong> (required: ' + minScore + '%). Please improve content and re-analyse to enable publication.';
+            } else if (isNewNode) {
+              noticeText = 'Content must be analysed before publication. Click "Analyze Content" in the Quality Gate tab.';
+            } else if (isPublished) {
+              noticeText = 'Content is currently published. Analysis required before modifying publication status.';
+            } else {
+              noticeText = 'Publication is locked until content analysis is complete. Click "Analyze Content" in the Quality Gate tab.';
+            }
+            
+            $statusWrapper.append(
+              '<div id="quality-gate-status-notice" class="description">' +
+              noticeText +
+              '</div>'
+            );
+          }
+          
+          // Add CSS class to wrapper
+          $statusWrapper.addClass('quality-gate-locked');
+        }
+        
+        // Disable "Published" option in moderation state (for moderated content)
+        if ($publishOption.length) {
+          console.log('Quality Gate: Disabling Published option in moderation state');
+          $publishOption.prop('disabled', true);
+          $publishOption.text($publishOption.text().replace(' (locked)', '') + ' (locked - analysis required)');
+          
+          // If currently selected, change to draft
+          if ($moderationSelect.val() === 'published') {
+            $moderationSelect.val('draft');
+          }
+        }
+      }
+
+      /**
+       * Performs content analysis via AJAX.
+       */
+      function analyzeContent() {
+        console.log('Quality Gate: analyzeContent() called');
+        
+        const $button = $('#analyze-now');
+        const $panel = $('.quality-gate-content');
+        
+        console.log('Quality Gate: button element', $button.length);
+        console.log('Quality Gate: panel element', $panel.length);
+        
+        // Get current content from form
+        const title = $('[name="title[0][value]"]').val() || '';
+        const body = getBodyContent();
+        const contentType = getContentType();
+        
+        console.log('Quality Gate: content', {
+          title: title,
+          bodyLength: body.length,
+          contentType: contentType
+        });
+        
+        
+        // Show loading state
+        $button.prop('disabled', true).html('Analyzing...');
+        console.log('Quality Gate: starting AJAX request');
+        
+        $.ajax({
+          url: '/edaitorial/real-time/analyze',
+          method: 'POST',
+          data: {
+            title: title,
+            body: body,
+            content_type: contentType
+          },
+          dataType: 'json',
+          success: function(response) {
+            console.log('Quality Gate: AJAX success', response);
+            console.log('Quality Gate: Response has score?', 'score' in response, response.score);
+            console.log('Quality Gate: Response has category_scores?', 'category_scores' in response, response.category_scores);
+            
+            // Check for errors or pending status
+            if (response.status === 'error' || response.status === 'pending') {
+              alert(response.message || 'Please enter more content to analyze.');
+              $button.prop('disabled', false).html('Analyze Now');
+              return;
+            }
+            
+            // Ensure response has required fields
+            if (!response.score && response.score !== 0) {
+              console.error('Quality Gate: Response missing score!', response);
+              alert('Analysis completed but response format is invalid. Check console for details.');
+              $button.prop('disabled', false).html('Analyze Now');
+              return;
+            }
+            
+            // Show results in the new tab below content
+            displayResultsTab(response);
+            
+            // Update button after successful analysis
+            $button.prop('disabled', false).html('Re-Analyze');
+            
+            // Update status in sidebar
+            const minScore = gateSettings.minScore || 80;
+            const canPublish = response.score >= minScore;
+            
+            if (canPublish) {
+              $('.analyze-status').html('✓ Analysis complete — Score: ' + response.score + '%. Ready to publish.');
+              Drupal.announce(
+                Drupal.t('Quality score: @score%. Ready to publish.', {'@score': response.score}),
+                'polite'
+              );
+            } else {
+              $('.analyze-status').html('Score: ' + response.score + '% — Minimum ' + minScore + '% required for publication.');
+              Drupal.announce(
+                Drupal.t('Quality score: @score%. Minimum @min% required for publication.', {
+                  '@score': response.score,
+                  '@min': minScore
+                }),
+                'assertive'
+              );
+            }
+            
+            // Enable/disable publish button based on score
+            updatePublishButtonState(canPublish, response.score, minScore);
+            
+            // Save analysis to tempstore and update sidebar
+            saveAnalysisToServer(response);
+            updateSidebarScores(response);
+          },
+          error: function(xhr, status, error) {
+            console.error('Quality Gate: AJAX error', {xhr: xhr, status: status, error: error});
+            alert('Analysis failed. Please try again or check the logs.\n\nError: ' + error);
+            $button.prop('disabled', false).html('Analyze Now');
+          }
+        });
+      }
+
+      /**
+       * Generates an explanation for an issue based on its type and severity.
+       */
+      function generateIssueExplanation(issue, category) {
+        const severity = issue.severity || 'Low';
+        const type = category || 'Content';
+        
+        // Generate contextual explanations based on type (British English)
+        const explanations = {
+          'SEO': {
+            'Critical': 'Critical SEO issues can significantly affect your content\'s visibility in search engines, reducing organic traffic and reach.',
+            'High': 'This issue may negatively impact your search rankings. It\'s important to resolve it to improve your content\'s visibility.',
+            'Medium': 'Whilst not critical, this issue may limit your content\'s potential in search results. It\'s recommended to optimise it.',
+            'Low': 'This is a minor SEO optimisation detail that, whilst not urgent, can contribute to improving your positioning.'
+          },
+          'Typos': {
+            'Critical': 'Critical spelling errors can seriously damage your content\'s credibility and professionalism.',
+            'High': 'This error is highly visible and may affect the perceived quality of your content. It should be corrected before publishing.',
+            'Medium': 'Spelling error that may affect readability and professionalism of the content.',
+            'Low': 'Minor error that is advisable to correct to maintain text quality.'
+          },
+          'Links': {
+            'Critical': 'Broken or critical links can create a poor user experience and negatively affect your SEO.',
+            'High': 'This link has significant issues that may frustrate users and impair navigation.',
+            'Medium': 'Link issue that should be reviewed to ensure a good user experience.',
+            'Low': 'Minor link detail that is recommended to verify.'
+          },
+          'Accessibility': {
+            'Critical': 'This issue can make your content completely inaccessible to users with disabilities. It\'s fundamental to resolve it.',
+            'High': 'Significant accessibility barrier that limits access for many users. It must be corrected to comply with WCAG standards.',
+            'Medium': 'Accessibility issue that hinders the experience of some users. It\'s recommended to improve it.',
+            'Low': 'Recommended accessibility improvement to optimise the experience for all users.'
+          },
+          'Content': {
+            'Critical': 'Critical content issue that significantly affects the quality, clarity, or usefulness of the message.',
+            'High': 'This issue notably impacts the content\'s effectiveness. It\'s important to address it.',
+            'Medium': 'Area for improvement in the content that can make it more effective and useful for readers.',
+            'Low': 'Suggestion to refine and improve the overall quality of the content.'
+          }
+        };
+        
+        // Get explanation or use default
+        const categoryExplanations = explanations[type] || explanations['Content'];
+        return categoryExplanations[severity] || 'This issue should be reviewed to improve overall content quality.';
+      }
+      
+      /**
+       * Attaches toggle handlers to expandable issues.
+       */
+      function attachIssueExpandHandlers() {
+        $('.issue-expand-btn').off('click.issueExpand').on('click.issueExpand', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const $btn = $(this);
+          const issueId = $btn.data('issue-id');
+          const $details = $('#' + issueId);
+          const $icon = $btn.find('.expand-icon');
+          const isExpanded = $btn.attr('aria-expanded') === 'true';
+          
+          if (isExpanded) {
+            // Collapse
+            $details.slideUp(200);
+            $icon.text('ℹ️');
+            $btn.attr('aria-expanded', 'false');
+            $btn.removeClass('expanded');
+          } else {
+            // Expand
+            $details.slideDown(200);
+            $icon.text('✕');
+            $btn.attr('aria-expanded', 'true');
+            $btn.addClass('expanded');
+          }
+        });
+      }
+      
+      /**
+       * Saves analysis results to server permanently (State API).
+       */
+      function saveAnalysisToServer(response) {
+        console.log('Quality Gate: Saving analysis to server', {
+          node_id: gateSettings.nodeId,
+          score: response.score,
+          category_scores: response.category_scores
+        });
+        
+        if (!gateSettings.nodeId) {
+          console.warn('Quality Gate: Cannot save - node ID is null (new node not yet saved)');
+          return;
+        }
+        
+        // Convert arrays to JSON strings (Drupal doesn't accept nested arrays in POST)
+        $.ajax({
+          url: '/edaitorial/real-time/save-analysis',
+          method: 'POST',
+          data: {
+            node_id: gateSettings.nodeId,
+            score: response.score,
+            category_scores: JSON.stringify(response.category_scores),
+            issues: JSON.stringify(response.issues)
+          },
+          success: function(data) {
+            console.log('Quality Gate: ✅ Analysis saved successfully to database', data);
+            console.log('Quality Gate: Stored at key: quality_gate.analysis.' + gateSettings.nodeId);
+          },
+          error: function(xhr, status, error) {
+            console.error('Quality Gate: ❌ Failed to save analysis', {
+              error: error,
+              status: status,
+              response: xhr.responseText
+            });
+          }
+        });
+      }
+      
+      /**
+       * Updates the sidebar with new scores.
+       */
+      function updateSidebarScores(response) {
+        console.log('Quality Gate: Updating sidebar scores', response);
+        
+        const minScore = gateSettings.minScore || 80;
+        const score = response.score || 0;
+        const canPublish = score >= minScore;
+        const statusClass = canPublish && score > 0 ? 'can-publish' : 'cannot-publish';
+        const statusIcon = canPublish && score > 0 ? '✓' : (score > 0 ? '✗' : '⏸');
+        
+        // Update overall score value
+        $('.score-value-big').text(score + '%');
+        
+        // Update overall score bar
+        $('.score-fill').css('width', score + '%');
+        
+        // Update status badge
+        $('.status-badge')
+          .removeClass('status-can-publish status-cannot-publish')
+          .addClass('status-' + statusClass)
+          .html(statusIcon + ' ' + (score > 0 ? (canPublish ? 'Ready to Publish' : 'Below Threshold') : 'Not Analyzed'));
+        
+        // Update category scores
+        if (response.category_scores) {
+          for (const [catKey, catScore] of Object.entries(response.category_scores)) {
+            const catStatus = catScore >= 75 ? 'good' : (catScore >= 50 ? 'fair' : 'poor');
+            
+            // Find the category item
+            const $categoryItems = $('.category-item');
+            $categoryItems.each(function() {
+              const $item = $(this);
+              const categoryName = $item.find('.category-name').text().toLowerCase();
+              
+              if (categoryName === catKey.toLowerCase()) {
+                // Update percentage text
+                $item.find('.category-percentage')
+                  .removeClass('good fair poor')
+                  .addClass(catStatus)
+                  .text(catScore + '%');
+                
+                // Update progress bar
+                $item.find('.category-fill')
+                  .removeClass('good fair poor')
+                  .addClass(catStatus)
+                  .css('width', catScore + '%');
+              }
+            });
+          }
+        }
+        
+        // Update or create "Last Analysis" section if it doesn't exist
+        let $lastAnalysis = $('.gate-previous-analysis');
+        if ($lastAnalysis.length === 0) {
+          // Create it before the info banner
+          const $infoBanner = $('.gate-info-banner');
+        
+        } else {
+          // Update existing Last Analysis section
+          $lastAnalysis.find('.sidebar-score-value').text(score + '%');
+          $lastAnalysis.find('.sidebar-score-icon').text(statusIcon);
+          $lastAnalysis.find('.sidebar-score-badge')
+            .removeClass('can-publish cannot-publish')
+            .addClass(statusClass);
+          
+          }
+        
+        console.log('Quality Gate: Sidebar updated successfully');
+      }
+      
+      /**
+       * Attaches toggle handlers to collapsible category headers.
+       */
+      function attachCategoryToggleHandlers() {
+        $('.category-toggle').off('click.categoryToggle keypress.categoryToggle').on('click.categoryToggle keypress.categoryToggle', function(e) {
+          // Handle both click and Enter/Space key
+          if (e.type === 'keypress' && e.which !== 13 && e.which !== 32) {
+            return;
+          }
+          
+          e.preventDefault();
+          
+          const $toggle = $(this);
+          const $categoryGroup = $toggle.closest('.collapsible-category');
+          const $content = $categoryGroup.find('.category-content');
+          const $icon = $toggle.find('.toggle-icon');
+          const isExpanded = $toggle.attr('aria-expanded') === 'true';
+          
+          // Toggle state
+          if (isExpanded) {
+            // Collapse
+            $content.slideUp(300);
+            $icon.text('▶');
+            $toggle.attr('aria-expanded', 'false');
+            $categoryGroup.addClass('collapsed');
+          } else {
+            // Expand
+            $content.slideDown(300);
+            $icon.text('▼');
+            $toggle.attr('aria-expanded', 'true');
+            $categoryGroup.removeClass('collapsed');
+          }
+        });
+      }
+      
+      /**
+       * Displays results in the tab below content.
+       */
+      function displayResultsTab(response) {
+        console.log('Quality Gate: displayResultsTab()', response);
+        
+        const minScore = gateSettings.minScore || 80;
+        const score = response.score || 0;
+        const canPublish = score >= minScore;
+        
+        // Build HTML for results
+        let html = '<div class="quality-results-wrapper">';
+        
+        // Overall score header
+        html += '<div class="results-header">';
+        html += '<div class="score-badge-large ' + (canPublish ? 'badge-success' : 'badge-danger') + '">';
+        html += '<div class="badge-icon">' + (canPublish ? '✓' : '✗') + '</div>';
+        html += '<div class="badge-content">';
+        html += '<div class="badge-score">' + score + '%</div>';
+        html += '<div class="badge-label">' + (canPublish ? 'Ready to Publish' : 'Below Threshold (' + score + '% / ' + minScore + '%)') + '</div>';
+        html += '</div>';
+        html += '</div>';
+        html += '</div>';
+        
+        // Show recommendation message if score is low BUT blocking is disabled
+        const blockPublishing = Boolean(gateSettings.blockPublishing);
+        if (!canPublish && !blockPublishing) {
+          html += '<div class="quality-recommendation-notice">';
+          html += '<div class="recommendation-icon">ℹ️</div>';
+          html += '<div class="recommendation-text">';
+          html += '<strong>Quality Recommendation</strong><br>';
+          html += 'Whilst publishing is permitted, it is strongly recommended that content achieves ';
+          html += 'a minimum quality score of <strong>' + minScore + '%</strong>. ';
+          html += 'Please review the issues below to improve your content quality.';
+          html += '</div>';
+          html += '</div>';
+        }
+        
+        // Category scores
+        if (response.category_scores) {
+          html += '<div class="category-grid">';
+          for (const [category, catScore] of Object.entries(response.category_scores)) {
+            const catClass = catScore >= 75 ? 'cat-good' : (catScore >= 50 ? 'cat-fair' : 'cat-poor');
+            html += '<div class="category-card ' + catClass + '">';
+            html += '<div class="cat-name">' + category.charAt(0).toUpperCase() + category.slice(1) + '</div>';
+            html += '<div class="cat-score">' + catScore + '%</div>';
+            html += '<div class="cat-bar"><div class="cat-fill" style="width: ' + catScore + '%"></div></div>';
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+        
+        // Issues list grouped by CATEGORY
+        if (response.issues && response.issues.length > 0) {
+          console.log('Quality Gate: Rendering issues list with', response.issues.length, 'issues');
+          html += '<div class="issues-list">';
+          html += '<h3>Issues Found (' + response.issues.length + ')</h3>';
+          
+          // Group by category (type)
+          const issuesByCategory = {
+            'SEO': [],
+            'Typos': [],
+            'Links': [],
+            'Content': [],
+            'Accessibility': []
+          };
+          
+          response.issues.forEach(function(issue) {
+            const type = issue.type || 'Content';
+            if (!issuesByCategory[type]) {
+              issuesByCategory[type] = [];
+            }
+            issuesByCategory[type].push(issue);
+          });
+          
+          console.log('Quality Gate: Issues by category:', issuesByCategory);
+          
+          // Category icons and colors
+          const categoryConfig = {
+            'SEO': { icon: '🔍', color: 'seo' },
+            'Typos': { icon: '✍️', color: 'typos' },
+            'Links': { icon: '🔗', color: 'links' },
+            'Content': { icon: '📝', color: 'content' },
+            'Accessibility': { icon: '♿', color: 'accessibility' }
+          };
+          
+          // Severity order for sorting
+          const severityOrder = {
+            'Critical': 1,
+            'High': 2,
+            'Medium': 3,
+            'Low': 4
+          };
+          
+          // Display each category group (collapsible, collapsed by default)
+          for (const [category, issues] of Object.entries(issuesByCategory)) {
+            if (issues.length > 0) {
+              const config = categoryConfig[category] || { icon: '•', color: 'other' };
+              const categoryId = 'category-' + config.color;
+              
+              // Sort issues by severity: Critical > High > Medium > Low
+              const sortedIssues = issues.sort(function(a, b) {
+                const severityA = a.severity || 'Low';
+                const severityB = b.severity || 'Low';
+                const orderA = severityOrder[severityA] || 999;
+                const orderB = severityOrder[severityB] || 999;
+                return orderA - orderB;
+              });
+              
+              html += '<div class="category-group category-' + config.color + ' collapsible-category collapsed" data-category="' + categoryId + '">';
+              html += '<h4 class="category-header">';
+              html += '<span class="category-toggle" role="button" tabindex="0" aria-expanded="false">';
+              html += '<span class="toggle-icon">▶</span>';
+              html += '<span class="category-title">' + config.icon + ' ' + category + ' (' + issues.length + ')</span>';
+              html += '</span>';
+              html += '</h4>';
+              html += '<ul class="category-content" style="display: none;">';
+              
+              sortedIssues.forEach(function(issue, index) {
+                const severityClass = 'severity-' + (issue.severity || 'Low').toLowerCase();
+                const issueId = 'issue-' + category.toLowerCase() + '-' + index;
+                
+                // Generate explanation if not provided by AI
+                const explanation = issue.explanation || issue.details || generateIssueExplanation(issue, category);
+                
+                html += '<li class="' + severityClass + ' expandable-issue">';
+                html += '<div class="issue-header">';
+                html += '<span class="issue-severity-badge">' + (issue.severity || 'Low') + '</span>';
+                html += '<span class="issue-text">' + issue.description + '</span>';
+                html += '<button class="issue-expand-btn" data-issue-id="' + issueId + '" aria-expanded="false" title="View details">';
+                html += '<span class="expand-icon">ℹ️</span>';
+                html += '</button>';
+                html += '</div>';
+                html += '<div class="issue-details" id="' + issueId + '" style="display: none;">';
+                html += '<div class="issue-details-content">';
+                html += '<strong>Why is this important?</strong>';
+                html += '<p>' + explanation + '</p>';
+                html += '</div>';
+                html += '</div>';
+                html += '</li>';
+              });
+              
+              html += '</ul>';
+              html += '</div>';
+            }
+          }
+          
+          html += '</div>';
+        }
+        
+        html += '</div>';
+        
+        // Insert HTML
+        $('#quality-results-content').html(html);
+        
+        // Attach toggle handlers for collapsible categories
+        attachCategoryToggleHandlers();
+        
+        // Attach toggle handlers for expandable issues
+        attachIssueExpandHandlers();
+        
+        // Show and open the results tab
+        $('#quality-analysis-results').show().attr('open', true);
+        
+        // Scroll to results
+        $('html, body').animate({
+          scrollTop: $('#quality-analysis-results').offset().top - 100
+        }, 500);
+        
+        // Enable/disable publish button based on score
+        updatePublishButtonState(canPublish, score, minScore);
+      }
+      
+      /**
+       * Updates the state of the publish button based on score.
+       */
+      function updatePublishButtonState(canPublish, score, minScore) {
+        console.log('Quality Gate: Updating publish button state', {canPublish, score, minScore});
+        
+        // Check if blocking is enabled in settings
+        // Convert to boolean explicitly (handles 0, false, null, undefined)
+        const blockPublishing = Boolean(gateSettings.blockPublishing);
+        
+        if (!blockPublishing) {
+          console.log('Quality Gate: Publishing blocking is disabled - showing recommendation/info only');
+          
+          // Update the notice under the checkbox
+          const $statusWrapper = $('#edit-status-wrapper');
+          let noticeHtml = '';
+          let noticeStyle = '';
+          
+          if (!canPublish) {
+            // Low score - show warning/recommendation
+            noticeHtml = '<strong>Quality score: ' + score + '%</strong> (recommended: ' + minScore + '% or higher). ' +
+              'Whilst publication is permitted, achieving the recommended score ensures optimal content quality.';
+            noticeStyle = 'color: #856404; border-left-color: #ffc107; background: #fff3cd;';
+            
+            // Also show prominent recommendation message above results
+            if (!$('#quality-gate-recommendation').length) {
+              const $recommendation = $('<div id="quality-gate-recommendation" class="quality-gate-soft-warning" style="margin: 16px 0; padding: 14px 18px; background: #fff8e8; border: 1px solid #ffe08a; border-left: 3px solid #ffc107; border-radius: 4px; color: #856404; font-size: 14px; line-height: 1.6;">')
+                .html(
+                  '<strong>Quality Recommendation:</strong> ' +
+                  'Whilst publishing is permitted, it is strongly recommended that content achieves a minimum quality score of <strong>' + minScore + '%</strong>. ' +
+                  'Current score: <strong>' + score + '%</strong>. ' +
+                  'Please review the Quality Analysis Results below to improve your content quality.'
+                );
+              
+              if ($('#quality-analysis-results').length) {
+                $('#quality-analysis-results').before($recommendation);
+              }
+            }
+          } else {
+            // Good score - show success message
+            noticeHtml = '<strong>Quality score: ' + score + '%</strong> (recommended: ' + minScore + '%+). Content quality is good.';
+            noticeStyle = 'color: #155724; border-left-color: #28a745; background: #d4edda;';
+            
+            // Remove recommendation if it exists
+            $('#quality-gate-recommendation').remove();
+          }
+          
+          // Update notice under checkbox
+          if ($statusWrapper.length) {
+            if ($('#quality-gate-status-notice').length) {
+              $('#quality-gate-status-notice')
+                .html(noticeHtml)
+                .attr('style', noticeStyle + ' padding: 10px 14px; margin-top: 8px; border-radius: 4px; border: 1px solid; border-left-width: 3px;');
+            } else {
+              $statusWrapper.append(
+                '<div id="quality-gate-status-notice" class="description" style="' + noticeStyle + ' padding: 10px 14px; margin-top: 8px; border-radius: 4px; border: 1px solid; border-left-width: 3px;">' +
+                noticeHtml +
+                '</div>'
+              );
+            }
+          }
+          
+          return; // Don't apply any blocking
+        }
+        
+        // Find elements - use same comprehensive selectors
+        const $statusWrapper = $('#edit-status-wrapper');
+        const $statusCheckbox = $(
+          '#edit-status, ' +
+          '#edit-status-value, ' +
+          'input[name="status[value]"], ' +
+          'input[type="checkbox"][id*="status"]'
+        ).filter(':checkbox');
+        const $publishOption = $('[name="moderation_state[0][state]"] option[value="published"]');
+        const $moderationSelect = $('[name="moderation_state[0][state]"]');
+        const $saveButton = $('#edit-submit');
+        
+        console.log('Quality Gate: updatePublishButtonState found', $statusCheckbox.length, 'checkboxes');
+        
+        // Update global state
+        window.qualityGateAnalysisComplete = true;
+        window.qualityGateScoreSufficient = canPublish;
+        
+        const isPublished = window.qualityGateIsPublished || false;
+        const isNewNode = window.qualityGateIsNewNode || false;
+        
+        if (!canPublish) {
+          // === BLOCK/RECOMMEND BASED ON PUBLISH STATUS ===
+          
+          // For ALREADY PUBLISHED content: Show recommendation, DON'T block
+          if (isPublished) {
+            console.log('Quality Gate: Published content with low score - showing recommendation only', {score, minScore});
+            
+            // Don't disable checkbox - let it stay published
+            if ($statusCheckbox.length) {
+              $statusCheckbox.each(function() {
+                const $cb = $(this);
+                // Keep it enabled and checked
+                $cb.prop('disabled', false);
+                $cb.removeAttr('disabled');
+                $cb.removeClass('quality-gate-disabled');
+              });
+              
+              $statusWrapper.removeClass('quality-gate-locked');
+              
+              // Update notice with RECOMMENDATION (not blocking)
+              const noticeHtml = '<strong>Quality score: ' + score + '%</strong> (recommended: ' + minScore + '% or higher). ' +
+                'Whilst publication is permitted, achieving the recommended score ensures optimal content quality.';
+              
+              $('#quality-gate-status-notice').html(noticeHtml)
+                .css({'color': '#f57c00', 'border-left-color': '#ff9800', 'background': '#fff3e0', 'padding': '12px', 'margin-top': '8px', 'border-radius': '4px'});
+            }
+          }
+          // For NEW or UNPUBLISHED content: Block publishing
+          else {
+            console.log('Quality Gate: Disabling checkbox - score too low', {isPublished, isNewNode});
+            
+            if ($statusCheckbox.length) {
+              $statusCheckbox.each(function() {
+                const $cb = $(this);
+                $cb.prop('disabled', true);
+                $cb.attr('disabled', 'disabled');
+                $cb.addClass('quality-gate-disabled');
+                
+                // Force uncheck for new/unpublished
+                $cb.prop('checked', false);
+              });
+              
+              // Re-attach click prevention
+              $statusCheckbox.off('click.qualitygate').on('click.qualitygate', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+              });
+              
+              $statusWrapper.addClass('quality-gate-locked');
+              
+              // Update notice
+              let noticeHtml = '';
+              if (isNewNode) {
+                noticeHtml = '<strong>Quality score: ' + score + '%</strong> (required: ' + minScore + '%). New content cannot be published until achieving the minimum score.';
+              } else {
+                noticeHtml = '<strong>Quality score: ' + score + '%</strong> (required: ' + minScore + '%). Please improve content and re-analyse to enable publication.';
+              }
+              
+              $('#quality-gate-status-notice').html(noticeHtml)
+                .css({'color': '#d32f2f', 'border-left-color': '#e53935', 'background': '#ffebee', 'padding': '12px', 'margin-top': '8px', 'border-radius': '4px'});
+            }
+          }
+          
+          // Disable "Published" option in moderation state
+          if ($publishOption.length) {
+            $publishOption.prop('disabled', true);
+            $publishOption.text($publishOption.text().replace(/ \(.*\)/, '') + ' (blocked - score: ' + score + '% < ' + minScore + '%)');
+            
+            // If "Published" is currently selected, change to "Draft"
+            if ($moderationSelect.val() === 'published') {
+              $moderationSelect.val('draft');
+            }
+          }
+          
+          // Add warning/recommendation message if not exists
+          if (!$('#quality-gate-warning').length) {
+            let $warning;
+            
+
+              // For new/unpublished content: BLOCKING (red, strict)
+              $warning = $('<div id="quality-gate-warning" class="messages messages--error quality-gate-blocked">')
+                .html(
+                  '<strong>Publication blocked</strong> — Quality score: <strong>' + score + '%</strong> (required: <strong>' + minScore + '%</strong>). ' +
+                  'Please review the Quality Analysis Results below, address identified issues, and re-analyse your content.'
+                );
+          
+            
+            // Insert warning before moderation widget or save button
+            if ($moderationSelect.length) {
+              $moderationSelect.closest('.form-item').before($warning);
+            } else if ($statusWrapper.length) {
+              $statusWrapper.before($warning);
+            } else {
+              $saveButton.before($warning);
+            }
+          }
+        } else {
+          // === ENABLE PUBLISHING ===
+          
+          console.log('Quality Gate: Score sufficient - enabling publishing and cleaning up observers');
+          
+          // CRITICAL: Disconnect all MutationObservers
+          if (window.qualityGateObservers && window.qualityGateObservers.length > 0) {
+            console.log('Quality Gate: Disconnecting', window.qualityGateObservers.length, 'MutationObservers');
+            window.qualityGateObservers.forEach(function(observer) {
+              observer.disconnect();
+            });
+            window.qualityGateObservers = [];
+          }
+          
+          // CRITICAL: Clear all setInterval timers
+          if (window.qualityGateIntervals && window.qualityGateIntervals.length > 0) {
+            console.log('Quality Gate: Clearing', window.qualityGateIntervals.length, 'intervals');
+            window.qualityGateIntervals.forEach(function(intervalId) {
+              clearInterval(intervalId);
+            });
+            window.qualityGateIntervals = [];
+          }
+          
+          // Enable status checkbox (non-moderated content)
+          if ($statusCheckbox.length) {
+            console.log('Quality Gate: Enabling checkbox - score sufficient');
+            $statusCheckbox.each(function() {
+              $(this).prop('disabled', false);
+              $(this).removeAttr('disabled');
+              $(this).removeClass('quality-gate-disabled');
+            });
+            
+            // Remove all event handlers
+            $statusCheckbox.off('click.qualitygate change.qualitygate');
+            
+            $statusWrapper.removeClass('quality-gate-locked');
+            
+            // Update notice
+            $('#quality-gate-status-notice').html(
+              '✓ <strong>Quality score: ' + score + '%</strong> (required: ' + minScore + '%). Ready to publish.'
+            ).css({'color': '#2e7d32', 'border-left-color': '#4caf50', 'background': 'linear-gradient(135deg, #f1f8f4, #ffffff)', 'padding': '12px', 'margin-top': '8px', 'border-radius': '4px'});
+          }
+          
+          // Enable "Published" option in moderation state
+          if ($publishOption.length) {
+            $publishOption.prop('disabled', false);
+            $publishOption.text($publishOption.text().replace(/ \(.*\)/, ''));
+          }
+          
+          // Remove warning message
+          $('#quality-gate-warning').remove();
+        }
+      }
+
+      /**
+       * Updates the panel with analysis results (OLD - kept for compatibility).
+       */
+      function updatePanel(response) {
+        console.log('Quality Gate: updatePanel()', response);
+        
+        const minScore = gateSettings.minScore || 80;
+        const score = response.score || 0;
+        const canPublish = score >= minScore;
+        
+        // Update overall score
+        $('.score-value-big').text(score + '%');
+        $('.score-fill').css('width', score + '%');
+        
+        // Update status badge
+        const $statusBadge = $('.status-badge');
+        if (canPublish) {
+          $statusBadge
+            .removeClass('status-cannot-publish')
+            .addClass('status-can-publish')
+            .html('✓ Ready to Publish');
+        } else {
+          $statusBadge
+            .removeClass('status-can-publish')
+            .addClass('status-cannot-publish')
+            .html('✗ Below Threshold (' + score + '% / ' + minScore + '%)');
+        }
+        
+        // Update category scores
+        if (response.category_scores) {
+          updateCategoryScores(response.category_scores);
+        }
+        
+        // Update issues summary
+        if (response.issues) {
+          updateIssuesSummary(response.issues);
+        }
+        
+        // Update cannot publish message
+        if (!canPublish) {
+        } else {
+          $('.cannot-publish-message').remove();
+        }
+      }
+
+      /**
+       * Updates category scores in the panel.
+       */
+      function updateCategoryScores(categoryScores) {
+        console.log('Quality Gate: updateCategoryScores()', categoryScores);
+        
+        for (const [category, score] of Object.entries(categoryScores)) {
+          const $categoryItem = $('.category-item').filter(function() {
+            return $(this).find('.category-name').text().toLowerCase() === category;
+          });
+          
+          if ($categoryItem.length) {
+            const scoreClass = score >= 75 ? 'good' : (score >= 50 ? 'fair' : 'poor');
+            
+            $categoryItem.find('.category-percentage')
+              .text(score + '%')
+              .removeClass('good fair poor')
+              .addClass(scoreClass);
+            
+            $categoryItem.find('.category-fill')
+              .css('width', score + '%')
+              .removeClass('good fair poor')
+              .addClass(scoreClass);
+          }
+        }
+      }
+
+      /**
+       * Updates issues summary.
+       */
+      function updateIssuesSummary(issues) {
+        console.log('Quality Gate: updateIssuesSummary()', issues);
+        
+        const issuesBySeverity = {
+          'Critical': 0,
+          'High': 0,
+          'Medium': 0,
+          'Low': 0
+        };
+        
+        issues.forEach(function(issue) {
+          const severity = issue.severity || 'Low';
+          if (issuesBySeverity.hasOwnProperty(severity)) {
+            issuesBySeverity[severity]++;
+          }
+        });
+        
+        // Update counts
+        for (const [severity, count] of Object.entries(issuesBySeverity)) {
+          const $issueCount = $('.issue-count.issue-' + severity.toLowerCase());
+          if ($issueCount.length) {
+            $issueCount.find('.count').text(count);
+            if (count === 0) {
+              $issueCount.hide();
+            } else {
+              $issueCount.show();
+            }
+          }
+        }
+      }
+
+      /**
+       * Opens AI Assistant inline for a specific field.
+       */
+      function openAiAssistantInline(field) {
+        console.log('Quality Gate: Opening AI Assistant inline for field:', field);
+        
+        let value;
+        const resultContainer = $('#ai-result-' + field);
+        
+        // Get ONLY the field value (NO context from other fields)
+        if (field === 'title') {
+          // Get ONLY TITLE field content
+          value = $('[name="title[0][value]"]').val() || '';
+          
+          console.log('✅ Evaluating TITLE field ONLY:', value);
+          console.log('   Length:', value.length, 'characters');
+        } else if (field === 'body') {
+          // Get ONLY BODY field content (from CKEditor or textarea)
+          value = getBodyContent();
+          
+          console.log('✅ Evaluating BODY field ONLY');
+          console.log('   Length:', value.length, 'characters');
+        }
+        
+        if (!value) {
+          alert('Please enter some content in the ' + field + ' field first.');
+          console.log('❌ No content found in', field, 'field');
+          return;
+        }
+        
+        console.log('🚀 Sending to AI (field ONLY, no context):', {
+          field: field,
+          contentLength: value.length
+        });
+        
+        // Show loading state
+        showInlineLoadingState(field);
+        
+        // Call AI for suggestions (send ONLY the field value, no context)
+        $.ajax({
+          url: '/edaitorial/real-time/ask-ai',
+          method: 'POST',
+          data: {
+            field: field,
+            value: value,
+            context: '' // Empty context - only send the field itself
+          },
+          dataType: 'json',
+          success: function(response) {
+            console.log('Ask AI Inline: Success', response);
+            if (response.status === 'success') {
+              showInlineSuggestion(field, response);
+            } else {
+              alert(response.message || 'Failed to get AI suggestion.');
+              hideInlineResult(field);
+            }
+          },
+          error: function(xhr, status, error) {
+            console.error('Ask AI Inline: Error', error);
+            alert('Failed to get AI suggestion. Please try again.');
+            hideInlineResult(field);
+          }
+        });
+      }
+      
+      /**
+       * Shows loading state for inline result.
+       */
+      function showInlineLoadingState(field) {
+        const fieldName = field === 'title' ? 'Title' : 'Body';
+        const html = '<div class="ai-result-header">' +
+          '<div class="ai-result-title"><span class="ai-loading-spinner"></span> AI is analysing your ' + fieldName + '...</div>' +
+          '</div>' +
+          '<div style="text-align: center; padding: 30px 0; color: #6b7280;">' +
+          '<p>✨ Evaluating the <strong>' + fieldName + '</strong> field content</p>' +
+          '<p>Generating suggestions to improve your ' + field + '...</p>' +
+          '<p style="font-size: 13px; margin-top: 8px;">This usually takes 3-5 seconds</p>' +
+          '</div>';
+        
+        $('#ai-result-' + field).html(html).show();
+      }
+      
+      /**
+       * Shows inline AI suggestion below field.
+       */
+      function showInlineSuggestion(field, data) {
+        const original = data.original || '';
+        const suggestion = data.suggestion || '';
+        const improvements = data.improvements || {};
+        
+        const isTextarea = field === 'body';
+        const inputType = isTextarea ? 'textarea' : 'input';
+        const extraClass = isTextarea ? ' ai-suggestion-textarea' : '';
+        
+        let html = '<div class="ai-result-header">';
+        html += '<div class="ai-result-title"><span style="font-size: 20px;">✨</span> AI Assistant</div>';
+        html += '<button class="ai-result-close" data-field="' + field + '" aria-label="Close">&times;</button>';
+        html += '</div>';
+        
+        // Original value
+        html += '<div class="ai-suggestion-field">';
+        html += '<label class="ai-suggestion-label">Original ' + capitalizeFirst(field) + '</label>';
+        html += '<div class="ai-suggestion-original">' + escapeHtml(original.substring(0, 200)) + (original.length > 200 ? '...' : '') + '</div>';
+        html += '</div>';
+        
+        // AI Suggestion
+        html += '<div class="ai-suggestion-field">';
+        html += '<label class="ai-suggestion-label">' + capitalizeFirst(field) + '</label>';
+        if (isTextarea) {
+          html += '<textarea class="ai-suggestion-new' + extraClass + '" id="ai-suggested-' + field + '">' + escapeHtml(suggestion) + '</textarea>';
+        } else {
+          html += '<input type="text" class="ai-suggestion-new' + extraClass + '" id="ai-suggested-' + field + '" value="' + escapeHtml(suggestion) + '">';
+        }
+        html += '<p style="margin-top: 6px; font-size: 12px; color: #6b7280; font-style: italic;">Use this field for the paragraph ' + field + '.</p>';
+        html += '</div>';
+        
+        // AI Assistant Note
+        html += '<div class="ai-assistant-note">';
+        html += '<div class="ai-assistant-note-header">AI Assistant</div>';
+        html += '<div class="ai-assistant-note-text">';
+        html += 'Here\'s a cleaner, more accessible, and more search-friendly version, with a neutral European institutional tone and simple language.';
+        html += '</div>';
+        html += '</div>';
+        
+        // Improvements
+        html += '<div class="ai-improvements-inline">';
+        html += '<h3 class="ai-improvements-inline-title">Why this works better</h3>';
+        html += '<div class="ai-improvements-grid-inline">';
+        
+        // Accessibility
+        html += '<div class="ai-improvement-card">';
+        html += '<h4>Accessibility</h4>';
+        html += '<ol>';
+        if (improvements.accessibility) {
+          const points = improvements.accessibility.split(/[,.]/).filter(p => p.trim()).slice(0, 3);
+          points.forEach(function(point) {
+            if (point.trim()) html += '<li>' + point.trim() + '</li>';
+          });
+        } else {
+          html += '<li>Uses clear, plain language</li>';
+          html += '<li>Expands acronyms on first use</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        // SEO
+        html += '<div class="ai-improvement-card">';
+        html += '<h4>SEO</h4>';
+        html += '<ol>';
+        if (improvements.seo) {
+          const points = improvements.seo.split(/[,.]/).filter(p => p.trim()).slice(0, 3);
+          points.forEach(function(point) {
+            if (point.trim()) html += '<li>' + point.trim() + '</li>';
+          });
+        } else {
+          html += '<li>Includes full name and acronym</li>';
+          html += '<li>Optimal length for search</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        // European tone
+        html += '<div class="ai-improvement-card">';
+        html += '<h4>European tone of voice</h4>';
+        html += '<ol>';
+        if (improvements.european_tone) {
+          const points = improvements.european_tone.split(/[,.]/).filter(p => p.trim()).slice(0, 3);
+          points.forEach(function(point) {
+            if (point.trim()) html += '<li>' + point.trim() + '</li>';
+          });
+        } else {
+          html += '<li>Neutral, factual, institutional</li>';
+          html += '<li>No marketing language</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        // Simplicity
+        html += '<div class="ai-improvement-card">';
+        html += '<h4>Simplicity</h4>';
+        html += '<ol>';
+        if (improvements.simplicity) {
+          const points = improvements.simplicity.split(/[,.]/).filter(p => p.trim()).slice(0, 3);
+          points.forEach(function(point) {
+            if (point.trim()) html += '<li>' + point.trim() + '</li>';
+          });
+        } else {
+          html += '<li>One clear message</li>';
+          html += '<li>Concise and direct</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        html += '</div>'; // grid
+        html += '</div>'; // improvements
+        
+        // Actions
+        html += '<div class="ai-result-actions">';
+        html += '<button class="ai-btn-inline ai-btn-inline-secondary ai-result-close" data-field="' + field + '">Cancel</button>';
+        html += '<button class="ai-btn-inline ai-btn-inline-primary ai-btn-apply" data-field="' + field + '">Replace</button>';
+        html += '</div>';
+        
+        $('#ai-result-' + field).html(html).show();
+        
+        // Bind close and apply handlers with detailed logging
+        $('.ai-result-close[data-field="' + field + '"]').on('click', function() {
+          console.log('🔴 Close clicked for field:', field);
+          hideInlineResult(field);
+        });
+        
+        $('.ai-btn-apply[data-field="' + field + '"]').on('click', function() {
+          console.log('🟢 Replace clicked for field:', field);
+          console.log('   Button data-field:', $(this).data('field'));
+          console.log('   Calling applyInlineSuggestion("' + field + '")');
+          applyInlineSuggestion(field);
+        });
+      }
+      
+      /**
+       * Hides inline result.
+       */
+      function hideInlineResult(field) {
+        $('#ai-result-' + field).hide().html('');
+      }
+      
+      /**
+       * Applies inline suggestion to the actual field.
+       */
+      function applyInlineSuggestion(field) {
+        console.log('🔧 applyInlineSuggestion called with field:', field);
+        
+        const suggestionId = '#ai-suggested-' + field;
+        console.log('   Looking for suggestion in:', suggestionId);
+        
+        const $suggestionField = $(suggestionId);
+        console.log('   Found suggestion field:', $suggestionField.length > 0 ? 'YES' : 'NO');
+        
+        const suggestion = $suggestionField.val();
+        console.log('   Suggestion value:', suggestion ? suggestion.substring(0, 50) + '...' : '(empty)');
+        
+        if (!suggestion) {
+          console.error('❌ No suggestion found in', suggestionId);
+          return;
+        }
+        
+        if (field === 'title') {
+          const titleSelector = '[name="title[0][value]"]';
+          console.log('   Looking for Title field with selector:', titleSelector);
+          
+          const $titleField = $(titleSelector);
+          console.log('   Found Title field:', $titleField.length > 0 ? 'YES' : 'NO');
+          
+          if ($titleField.length > 0) {
+            const oldValue = $titleField.val();
+            $titleField.val(suggestion);
+            
+            // Trigger change events to update Drupal's form state
+            $titleField.trigger('input').trigger('change').trigger('blur');
+            
+            const newValue = $titleField.val();
+            
+            console.log('   ✅ Title updated!');
+            console.log('      Old value:', oldValue);
+            console.log('      New value:', newValue);
+            console.log('      Events triggered: input, change, blur');
+            
+            // Visual confirmation
+            $titleField.css('border', '2px solid #10b981').css('background', '#ecfdf5');
+            setTimeout(function() {
+              $titleField.css('border', '').css('background', '');
+            }, 1000);
+            
+            Drupal.announce('Title updated with AI suggestion', 'polite');
+          } else {
+            console.error('❌ Title field not found with selector:', titleSelector);
+            
+            // Try alternative selectors
+            console.log('   Trying alternative selectors...');
+            const $altTitle = $('input[id*="title"], input[name*="title"]').first();
+            if ($altTitle.length > 0) {
+              console.log('   ✅ Found with alternative selector:', $altTitle.attr('name') || $altTitle.attr('id'));
+              $altTitle.val(suggestion).trigger('input').trigger('change');
+            }
+          }
+        } else if (field === 'body') {
+          console.log('   Applying to BODY field');
+          
+          // Try CKEditor first
+          let updated = false;
+          if (typeof CKEDITOR !== 'undefined') {
+            console.log('   CKEditor available, looking for body instance...');
+            for (const instance in CKEDITOR.instances) {
+              console.log('   Found CKEditor instance:', instance);
+              if (instance.includes('body')) {
+                console.log('   ✅ Updating CKEditor instance:', instance);
+                CKEDITOR.instances[instance].setData(suggestion);
+                updated = true;
+                break;
+              }
+            }
+          } else {
+            console.log('   CKEditor not available');
+          }
+          
+          // Fallback to textarea
+          if (!updated) {
+            const bodySelector = '[data-drupal-selector*="edit-body-0-value"]';
+            console.log('   Trying textarea with selector:', bodySelector);
+            
+            const $bodyField = $(bodySelector);
+            console.log('   Found Body textarea:', $bodyField.length > 0 ? 'YES' : 'NO');
+            
+            if ($bodyField.length) {
+              $bodyField.val(suggestion).trigger('input').trigger('change');
+              console.log('   ✅ Body textarea updated');
+              updated = true;
+            } else {
+              console.error('❌ Body field not found with selector:', bodySelector);
+              
+              // Try alternative selectors
+              console.log('   Trying alternative body selectors...');
+              const $altBody = $('textarea[name*="body"]').first();
+              if ($altBody.length > 0) {
+                console.log('   ✅ Found with alternative selector');
+                $altBody.val(suggestion).trigger('input').trigger('change');
+                updated = true;
+              }
+            }
+          }
+          
+          if (updated) {
+            console.log('   ✅ Body field updated successfully');
+          }
+          
+          Drupal.announce('Body updated with AI suggestion', 'polite');
+        }
+        
+        console.log('✅ Hiding inline result for field:', field);
+        hideInlineResult(field);
+      }
+      
+      /**
+       * Capitalizes first letter.
+       */
+      function capitalizeFirst(str) {
+        return str.charAt(0).toUpperCase() + str.slice(1);
+      }
+
+      /**
+       * Opens AI Assistant modal to get suggestions.
+       */
+      function openAiAssistant() {
+        console.log('Quality Gate: Opening AI Assistant');
+        
+        const title = $('[name="title[0][value]"]').val() || '';
+        const body = getBodyContent();
+        
+        if (!title && !body) {
+          alert('Please enter some content first.');
+          return;
+        }
+        
+        // Show loading modal
+        showAiLoadingModal();
+        
+        // Call AI for suggestions
+        $.ajax({
+          url: '/edaitorial/real-time/ask-ai',
+          method: 'POST',
+          data: {
+            field: 'title',
+            value: title,
+            context: body.substring(0, 500) // First 500 chars of body as context
+          },
+          dataType: 'json',
+          success: function(response) {
+            console.log('Ask AI: Success', response);
+            if (response.status === 'success') {
+              showAiSuggestionModal(response);
+            } else {
+              alert(response.message || 'Failed to get AI suggestion.');
+              closeAiModal();
+            }
+          },
+          error: function(xhr, status, error) {
+            console.error('Ask AI: Error', error);
+            alert('Failed to get AI suggestion. Please try again.');
+            closeAiModal();
+          }
+        });
+      }
+      
+      /**
+       * Shows loading modal whilst AI is thinking.
+       */
+      function showAiLoadingModal() {
+        const html = '<div class="ai-modal-content">' +
+          '<div class="ai-modal-header">' +
+          '<h2><span class="ai-loading-spinner"></span> AI is thinking...</h2>' +
+          '</div>' +
+          '<div class="ai-modal-body" style="text-align: center; padding: 60px;">' +
+          '<p style="font-size: 16px; color: #6b7280;">Generating suggestions to improve your content...</p>' +
+          '<p style="font-size: 14px; color: #9ca3af; margin-top: 12px;">This usually takes 3-5 seconds</p>' +
+          '</div>' +
+          '</div>';
+        
+        $('#ai-assistant-modal').html(html).addClass('active');
+      }
+      
+      /**
+       * Shows AI suggestion modal with results.
+       */
+      function showAiSuggestionModal(data) {
+        const original = data.original || '';
+        const suggestion = data.suggestion || '';
+        const improvements = data.improvements || {};
+        
+        let html = '<div class="ai-modal-content">';
+        
+        // Header
+        html += '<div class="ai-modal-header">';
+        html += '<h2><span style="font-size: 24px;">✨</span> AI Assistant</h2>';
+        html += '<button class="ai-modal-close" aria-label="Close">&times;</button>';
+        html += '</div>';
+        
+        // Body
+        html += '<div class="ai-modal-body">';
+        
+        // Original Title
+        html += '<div class="ai-field-section">';
+        html += '<label class="ai-field-label">Original Title</label>';
+        html += '<input type="text" class="ai-field-input" id="ai-original-title" value="' + escapeHtml(original) + '" readonly style="background: #f9fafb; color: #6b7280;">';
+        html += '</div>';
+        
+        // AI Suggestion
+        html += '<div class="ai-field-section">';
+        html += '<label class="ai-field-label">Title</label>';
+        html += '<input type="text" class="ai-field-input" id="ai-suggested-title" value="' + escapeHtml(suggestion) + '">';
+        html += '<p style="margin-top: 6px; font-size: 12px; color: #6b7280; font-style: italic;">Use this field for the paragraph title.</p>';
+        html += '</div>';
+        
+        // AI Assistant Box
+        html += '<div class="ai-assistant-section">';
+        html += '<div class="ai-assistant-header">AI Assistant</div>';
+        html += '<div class="ai-assistant-text">';
+        html += 'Here\'s a cleaner, more accessible, and more search-friendly version, with a neutral European institutional tone and simple language.';
+        html += '</div>';
+        html += '</div>';
+        
+        // Improvements "Why this works better"
+        html += '<div class="ai-improvements-section">';
+        html += '<h3 class="ai-improvements-title">Why this works better</h3>';
+        html += '<div class="ai-improvements-grid">';
+        
+        // Accessibility
+        html += '<div class="ai-improvement-category">';
+        html += '<h4>Accessibility</h4>';
+        html += '<ol>';
+        if (improvements.accessibility) {
+          const accessPoints = improvements.accessibility.split(/[,.]/).filter(p => p.trim());
+          accessPoints.forEach(function(point) {
+            if (point.trim()) {
+              html += '<li>' + point.trim() + '</li>';
+            }
+          });
+        } else {
+          html += '<li>Uses clear, plain language</li>';
+          html += '<li>Expands the acronym on first use</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        // SEO
+        html += '<div class="ai-improvement-category">';
+        html += '<h4>SEO</h4>';
+        html += '<ol>';
+        if (improvements.seo) {
+          const seoPoints = improvements.seo.split(/[,.]/).filter(p => p.trim());
+          seoPoints.forEach(function(point) {
+            if (point.trim()) {
+              html += '<li>' + point.trim() + '</li>';
+            }
+          });
+        } else {
+          html += '<li>Includes the full name and acronym</li>';
+          html += '<li>Optimal length for search results</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        // European tone
+        html += '<div class="ai-improvement-category">';
+        html += '<h4>European tone of voice</h4>';
+        html += '<ol>';
+        if (improvements.european_tone) {
+          const tonePoints = improvements.european_tone.split(/[,.]/).filter(p => p.trim());
+          tonePoints.forEach(function(point) {
+            if (point.trim()) {
+              html += '<li>' + point.trim() + '</li>';
+            }
+          });
+        } else {
+          html += '<li>Neutral, factual, and institutional</li>';
+          html += '<li>No marketing language or exaggeration</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        // Simplicity
+        html += '<div class="ai-improvement-category">';
+        html += '<h4>Simplicity</h4>';
+        html += '<ol>';
+        if (improvements.simplicity) {
+          const simplicityPoints = improvements.simplicity.split(/[,.]/).filter(p => p.trim());
+          simplicityPoints.forEach(function(point) {
+            if (point.trim()) {
+              html += '<li>' + point.trim() + '</li>';
+            }
+          });
+        } else {
+          html += '<li>One clear responsibility statement</li>';
+        }
+        html += '</ol>';
+        html += '</div>';
+        
+        html += '</div>'; // grid
+        html += '</div>'; // improvements section
+        
+        // Actions
+        html += '<div class="ai-modal-actions">';
+        html += '<button class="ai-btn ai-btn-secondary ai-btn-cancel">Cancel</button>';
+        html += '<button class="ai-btn ai-btn-primary ai-btn-replace">Replace</button>';
+        html += '</div>';
+        
+        html += '</div>'; // body
+        html += '</div>'; // content
+        
+        $('#ai-assistant-modal').html(html).addClass('active');
+      }
+      
+      /**
+       * Closes AI modal.
+       */
+      function closeAiModal() {
+        $('#ai-assistant-modal').removeClass('active').html('');
+      }
+      
+      /**
+       * Replaces current title with AI suggestion.
+       */
+      function replaceWithAiSuggestion() {
+        const suggestion = $('#ai-suggested-title').val();
+        if (suggestion) {
+          $('[name="title[0][value]"]').val(suggestion);
+          closeAiModal();
+          
+          // Show success message
+          Drupal.announce('Title updated with AI suggestion', 'polite');
+        }
+      }
+      
+      /**
+       * Escapes HTML for safe display.
+       */
+      function escapeHtml(text) {
+        const map = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+      }
+
+      /**
+       * Gets body content from CKEditor or textarea.
+       */
+      function getBodyContent() {
+        // Try CKEditor first
+        if (typeof CKEDITOR !== 'undefined') {
+          for (const instance in CKEDITOR.instances) {
+            if (instance.includes('body')) {
+              return CKEDITOR.instances[instance].getData();
+            }
+          }
+        }
+        
+        // Fallback to textarea
+        const $bodyField = $('[data-drupal-selector*="edit-body-0-value"]');
+        return $bodyField.val() || '';
+      }
+
+      /**
+       * Gets content type from URL or form.
+       */
+      function getContentType() {
+        const matches = window.location.pathname.match(/node\/(add|[0-9]+\/edit)\/([^\/]+)/);
+        if (matches && matches[2]) {
+          return matches[2];
+        }
+        
+        // Try to get from form
+        const $typeField = $('[name="type"]');
+        if ($typeField.length) {
+          return $typeField.val();
+        }
+        
+        return 'article';
+      }
+    }
+  };
+
+})(jQuery, Drupal, drupalSettings, once);

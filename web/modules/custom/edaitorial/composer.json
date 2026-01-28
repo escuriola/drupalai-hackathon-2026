@@ -1,0 +1,77 @@
+{
+  "name": "maxfire/edaitorial",
+  "description": "AI-powered editorial assistant with SEO and Accessibility insights for content analysis and optimization.",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "keywords": [
+    "drupal",
+    "ai",
+    "seo",
+    "accessibility",
+    "content-analysis",
+    "editorial",
+    "drupal-ai",
+    "mistral",
+    "hackathon"
+  ],
+  "homepage": "https://github.com/Maxfire/edAItorial",
+  "authors": [
+    {
+      "name": "Sergio Elvira",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/Maxfire/edAItorial/issues",
+    "source": "https://github.com/Maxfire/edAItorial"
+  },
+  "require": {
+    "php": ">=8.3",
+    "drupal/core": "^10 || ^11",
+    "drupal/ai": "^1.2"
+  },
+  "require-dev": {
+    "drupal/core-dev": "^10 || ^11"
+  },
+  "suggest": {
+    "drupal/pathauto": "Recommended for better URL management",
+    "drupal/metatag": "Enhanced meta tag management for SEO",
+    "drupal/redirect": "Manage redirects for broken links"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "autoload": {
+    "psr-4": {
+      "Drupal\\edaitorial\\": "src/",
+      "Drupal\\edaitorial_real_time_checker\\": "modules/edaitorial_real_time_checker/src/"
+    }
+  },
+  "extra": {
+    "drupal": {
+      "version": "1.0.0",
+      "datestamp": "1738022400",
+      "security-coverage": {
+        "status": "not-covered",
+        "message": "Project has not opted into security advisory coverage!"
+      }
+    }
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    }
+  ],
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "composer/installers": true,
+      "dealerdirect/phpcodesniffer-composer-installer": true,
+      "drupal/core-composer-scaffold": true,
+      "drupal/core-project-message": true,
+      "php-http/discovery": true,
+      "phpstan/extension-installer": true,
+      "tbachert/spi": true
+    }
+  }
+}

@@ -269,15 +269,23 @@ function _edaitorial_quality_gate_render_panel(array $analysis, NodeInterface $n
   }
   
   // Action buttons
-  $output .= '<div class="gate-actions">';
+  $output .= '<div class="gate-actions-vertical">';
   
-  $output .= '<button type="button" id="analyze-now" class="btn-analyze">';
+  // Button: Analyse Content (full width)
+  $output .= '<button type="button" id="analyze-now" class="btn-analyze-full">';
   $output .= $score > 0 ? 'Re-Analyse' : 'Analyse Content';
   $output .= '</button>';
   
-  $output .= '<button type="button" id="ask-ai-general" class="btn-ask-ai-general" title="Get AI suggestions for all content">';
-  $output .= '<span class="ai-icon">✨</span> Ask AI';
-  $output .= '</button>';
+  // Copilot mode toggle (centered below)
+  $output .= '<div class="gate-toggle-row">';
+  $output .= '<label class="copilot-toggle" for="copilot-mode-toggle">';
+  $output .= '<input type="checkbox" id="copilot-mode-toggle" class="copilot-checkbox" />';
+  $output .= '<span class="copilot-slider"></span>';
+  $output .= '<span class="copilot-label">';
+  $output .= '<span class="ai-icon">✨</span> Co-pilot mode';
+  $output .= '</span>';
+  $output .= '</label>';
+  $output .= '</div>';
 
   $output .= '</div>';
   

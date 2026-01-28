@@ -3,8 +3,13 @@ type: module
 description: 'AI-powered editorial assistant with SEO and Accessibility insights for content analysis and optimization.'
 package: 'DrupalAI Hackathon'
 core_version_requirement: ^10 || ^11
+php: '>=8.3'
+version: '1.0.0'
+
 dependencies:
   - drupal:node
   - drupal:user
   - drupal:system
   - drupal:ai
+
+configure: edaitorial.settings
