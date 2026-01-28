@@ -51,11 +51,10 @@
           analyzeContent();
         });
         
-        // Ask AI button handler (Quality Gate tab - general)
-        $(document).on('click', '#ask-ai-general', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          openAiAssistantGeneral();
+        // Copilot mode toggle handler
+        $(document).on('change', '#copilot-mode-toggle', function(e) {
+          const isEnabled = $(this).is(':checked');
+          handleCopilotMode(isEnabled);
         });
         
         // Ask AI inline link handlers (new - per field)
@@ -1435,20 +1434,42 @@
       }
 
       /**
-       * Opens AI Assistant for general content (from Quality Gate tab).
+       * Handles Copilot mode toggle.
        */
-      function openAiAssistantGeneral() {
-        
-        const title = $('[name="title[0][value]"]').val() || '';
-        const body = getBodyContent();
-        
-        if (!title && !body) {
-          alert('Please enter some content first.');
-          return;
+      function handleCopilotMode(isEnabled) {
+        if (isEnabled) {
+          // Enable Copilot mode
+          $('.ask-ai-link').addClass('copilot-active').show();
+          
+          // Show notification
+          if (!$('#copilot-notification').length) {
+            const notification = '<div id="copilot-notification" style="' +
+              'position: fixed; top: 20px; right: 20px; z-index: 10000; ' +
+              'background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); ' +
+              'color: white; padding: 16px 24px; border-radius: 8px; ' +
+              'box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4); ' +
+              'font-size: 14px; font-weight: 600; animation: slideInRight 0.3s ease;">' +
+              '<span style="font-size: 20px; margin-right: 8px;">✨</span>' +
+              'Copilot mode active - AI suggestions available for all fields' +
+              '</div>';
+            $('body').append(notification);
+            
+            // Auto-hide after 3 seconds
+            setTimeout(function() {
+              $('#copilot-notification').fadeOut(400, function() {
+                $(this).remove();
+              });
+            }, 3000);
+          }
+          
+          Drupal.announce('Copilot mode enabled', 'polite');
+        } else {
+          // Disable Copilot mode
+          $('.ask-ai-link').removeClass('copilot-active');
+          $('#copilot-notification').remove();
+          
+          Drupal.announce('Copilot mode disabled', 'polite');
         }
-        
-        // For now, open inline assistant for title field
-        openAiAssistantInline('title');
       }
 
       /**

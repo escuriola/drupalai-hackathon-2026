@@ -8,10 +8,14 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\ai\AiProviderPluginManager;
 use Drupal\ai\OperationType\Chat\ChatInput;
 use Drupal\ai\OperationType\Chat\ChatMessage;
+use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Base class for Edaitorial Checker plugins.
+ *
+ * Provides common functionality for AI-powered content analysis plugins
+ * including AI service integration and content extraction methods.
  */
 abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialCheckerInterface, ContainerFactoryPluginInterface {
 
@@ -20,30 +24,25 @@ abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialChe
    *
    * @var \Drupal\Core\Config\ConfigFactoryInterface
    */
-  protected $configFactory;
+  protected ConfigFactoryInterface $configFactory;
 
   /**
    * The AI provider plugin manager.
    *
    * @var \Drupal\ai\AiProviderPluginManager
    */
-  protected $aiProvider;
+  protected AiProviderPluginManager $aiProvider;
 
   /**
    * Constructs an EdaitorialCheckerBase object.
-   *
-   * @param array $configuration
-   *   A configuration array containing information about the plugin instance.
-   * @param string $plugin_id
-   *   The plugin_id for the plugin instance.
-   * @param mixed $plugin_definition
-   *   The plugin implementation definition.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
-   *   The config factory.
-   * @param \Drupal\ai\AiProviderPluginManager $ai_provider
-   *   The AI provider plugin manager.
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, ConfigFactoryInterface $config_factory, AiProviderPluginManager $ai_provider) {
+  public function __construct(
+    array $configuration,
+    string $plugin_id,
+    mixed $plugin_definition,
+    ConfigFactoryInterface $config_factory,
+    AiProviderPluginManager $ai_provider
+  ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->configFactory = $config_factory;
     $this->aiProvider = $ai_provider;
@@ -52,7 +51,12 @@ abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialChe
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+  public static function create(
+    ContainerInterface $container,
+    array $configuration,
+    $plugin_id,
+    $plugin_definition
+  ): static {
     return new static(
       $configuration,
       $plugin_id,
@@ -65,28 +69,32 @@ abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialChe
   /**
    * {@inheritdoc}
    */
-  public function getCategory() {
+  public function getCategory(): string {
     return $this->pluginDefinition['category'] ?? 'content';
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getLabel() {
-    return $this->pluginDefinition['label'] ?? $this->getPluginId();
+  public function getLabel(): string {
+    return (string) ($this->pluginDefinition['label'] ?? $this->getPluginId());
   }
 
   /**
    * {@inheritdoc}
    */
-  public function isEnabled() {
+  public function isEnabled(): bool {
     $config = $this->configFactory->get('edaitorial.settings');
     $enabled_checkers = $config->get('enabled_checkers') ?? [];
-    return empty($enabled_checkers) || in_array($this->getPluginId(), $enabled_checkers);
+    
+    // If no specific checkers are configured, all are enabled by default
+    return empty($enabled_checkers) || in_array($this->getPluginId(), $enabled_checkers, true);
   }
 
   /**
-   * Helper method to get text field content from a node.
+   * Get text field content from a node.
+   *
+   * Searches common text field names and returns the first non-empty content.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The node to get text from.
@@ -94,95 +102,69 @@ abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialChe
    * @return string|null
    *   The text content or NULL if not found.
    */
-  protected function getTextContent($node) {
-    $text_field_names = ['body', 'field_content', 'field_text', 'field_text1', 'field_description', 'field_body'];
+  protected function getTextContent(NodeInterface $node): ?string {
+    $text_field_names = [
+      'body', 
+      'field_content', 
+      'field_text', 
+      'field_text1', 
+      'field_description', 
+      'field_body'
+    ];
     
     foreach ($text_field_names as $field_name) {
       if ($node->hasField($field_name) && !$node->get($field_name)->isEmpty()) {
         $field_value = $node->get($field_name)->value;
-        if (!empty($field_value)) {
+        if (!empty(trim($field_value))) {
           return $field_value;
         }
       }
     }
     
-    return NULL;
+    return null;
   }
 
   /**
    * Call AI with a prompt and get response.
    *
+   * Handles AI service integration with proper error handling and fallbacks.
+   *
    * @param string $prompt
    *   The prompt to send to AI.
    *
    * @return string
-   *   The AI response.
+   *   The AI response or empty JSON array on failure.
    */
   protected function callAi(string $prompt): string {
-    $config = $this->configFactory->get('edaitorial.settings');
-    
-    // Check if AI is enabled in edaitorial
-    if (!$config->get('use_ai')) {
+    if (!$this->shouldUseAi()) {
       return '[]';
     }
     
     try {
-      // Get default chat provider from Drupal AI configuration
-      $ai_config = $this->configFactory->get('ai.settings');
-      $default_providers = $ai_config->get('default_providers') ?? [];
+      $provider_config = $this->getAiProviderConfig();
       
-      // Try to use chat_with_complex_json first (has model configured)
-      // Fall back to chat if not available
-      $provider_id = NULL;
-      $model_id = NULL;
-      
-      if (isset($default_providers['chat_with_complex_json']) && is_array($default_providers['chat_with_complex_json'])) {
-        $provider_id = $default_providers['chat_with_complex_json']['provider_id'];
-        $model_id = $default_providers['chat_with_complex_json']['model_id'];
-      }
-      elseif (isset($default_providers['chat'])) {
-        $provider_id = is_array($default_providers['chat']) ? 
-          $default_providers['chat']['provider_id'] : 
-          $default_providers['chat'];
-        
-        // Try to get model from provider config
-        if (!$model_id) {
-          $model_id = $this->getDefaultModelForProvider($provider_id);
-        }
-      }
-      
-      if (!$provider_id) {
-        \Drupal::logger('edaitorial')->warning('No default chat provider configured in Drupal AI module.');
-        return '[]';
-      }
-      
-      if (!$model_id) {
-        \Drupal::logger('edaitorial')->warning('No model available for provider @provider', [
-          '@provider' => $provider_id,
-        ]);
+      if (!$provider_config['provider_id'] || !$provider_config['model_id']) {
+        \Drupal::logger('edaitorial')->warning('AI provider or model not configured properly.');
         return '[]';
       }
       
       // Get the AI provider instance
-      $provider = $this->aiProvider->createInstance($provider_id);
+      $provider = $this->aiProvider->createInstance($provider_config['provider_id']);
       
-      // Create chat message
+      // Create chat message and input
       $message = new ChatMessage('user', $prompt);
-      
-      // Create chat input
       $input = new ChatInput([$message]);
       
-      // Call the AI
-      $output = $provider->chat($input, $model_id);
+      // Call the AI service
+      $output = $provider->chat($input, $provider_config['model_id']);
       
-      // Get the text response from ChatMessage
-      $message = $output->getNormalized();
-      $response = $message->getText();
-      
-      return $response;
+      // Extract response text
+      $response_message = $output->getNormalized();
+      return $response_message->getText();
     }
     catch (\Exception $e) {
-      \Drupal::logger('edaitorial')->error('AI call failed: @message', [
+      \Drupal::logger('edaitorial')->error('AI call failed in @plugin: @message', [
+        '@plugin' => $this->getPluginId(),
         '@message' => $e->getMessage(),
       ]);
       return '[]';
@@ -190,39 +172,71 @@ abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialChe
   }
 
   /**
+   * Get AI provider configuration.
+   *
+   * @return array
+   *   Array with provider_id and model_id.
+   */
+  protected function getAiProviderConfig(): array {
+    $ai_config = $this->configFactory->get('ai.settings');
+    $default_providers = $ai_config->get('default_providers') ?? [];
+    
+    $provider_id = null;
+    $model_id = null;
+    
+    // Try different chat operations in order of preference
+    $chat_operations = [
+      'chat_with_complex_json',
+      'chat_with_structured_response', 
+      'chat_with_tools',
+      'chat'
+    ];
+    
+    foreach ($chat_operations as $operation) {
+      if (isset($default_providers[$operation])) {
+        $config = $default_providers[$operation];
+        
+        if (is_array($config)) {
+          $provider_id = $config['provider_id'] ?? null;
+          $model_id = $config['model_id'] ?? null;
+        } else {
+          $provider_id = $config;
+          $model_id = $this->getDefaultModelForProvider($provider_id);
+        }
+        
+        if ($provider_id && $model_id) {
+          break;
+        }
+      }
+    }
+    
+    return [
+      'provider_id' => $provider_id,
+      'model_id' => $model_id,
+    ];
+  }
+
+  /**
    * Get default model for a provider.
    *
-   * @param string $provider_id
+   * @param string|null $provider_id
    *   The provider ID.
    *
    * @return string|null
    *   The model ID or NULL if none found.
    */
-  protected function getDefaultModelForProvider(string $provider_id): ?string {
+  protected function getDefaultModelForProvider(?string $provider_id): ?string {
+    if (!$provider_id) {
+      return null;
+    }
+    
     try {
-      // First, check if there's a model configured in ai.settings for any chat operation
-      $ai_config = $this->configFactory->get('ai.settings');
-      $default_providers = $ai_config->get('default_providers') ?? [];
-      
-      // Check all chat-related operations for a configured model
-      $chat_operations = ['chat_with_complex_json', 'chat_with_structured_response', 'chat_with_tools', 'chat'];
-      
-      foreach ($chat_operations as $op) {
-        if (isset($default_providers[$op]) && is_array($default_providers[$op])) {
-          if (isset($default_providers[$op]['provider_id']) && 
-              $default_providers[$op]['provider_id'] === $provider_id &&
-              isset($default_providers[$op]['model_id'])) {
-            return $default_providers[$op]['model_id'];
-          }
-        }
-      }
-      
-      // If not found in ai.settings, try provider config
-      $provider_config_name = 'ai_provider_' . $provider_id . '.settings';
+      $provider_config_name = "ai_provider_{$provider_id}.settings";
       $provider_config = $this->configFactory->get($provider_config_name);
       
       // Try to get default model
-      if ($default_model = $provider_config->get('default_model')) {
+      $default_model = $provider_config->get('default_model');
+      if ($default_model) {
         return $default_model;
       }
       
@@ -239,42 +253,112 @@ abstract class EdaitorialCheckerBase extends PluginBase implements EdaitorialChe
       ]);
     }
     
-    return NULL;
+    return null;
   }
 
   /**
    * Parse AI JSON response into issues array.
    *
+   * Handles various response formats and extracts valid JSON.
+   *
    * @param string $response
    *   The AI response string.
    *
    * @return array
-   *   Array of issues.
+   *   Array of parsed issues or empty array on failure.
    */
   protected function parseAiResponse(string $response): array {
-    // Try to extract JSON from response (in case AI adds explanation)
+    if (empty(trim($response))) {
+      return [];
+    }
+    
+    // Clean response - remove markdown code blocks if present
+    $response = trim($response);
+    $response = preg_replace('/^```json\s*/i', '', $response);
+    $response = preg_replace('/\s*```$/i', '', $response);
+    
+    // Try to extract JSON array from response
     if (preg_match('/\[[\s\S]*\]/i', $response, $matches)) {
       $json_string = $matches[0];
-    }
-    else {
+    } else {
       $json_string = $response;
     }
     
     try {
-      $decoded = json_decode($json_string, TRUE, 512, JSON_THROW_ON_ERROR);
+      $decoded = json_decode($json_string, true, 512, JSON_THROW_ON_ERROR);
       
       if (is_array($decoded)) {
-        return $decoded;
+        return $this->validateIssuesArray($decoded);
       }
     }
-    catch (\Exception $e) {
-      \Drupal::logger('edaitorial')->error('Failed to parse AI response: @message. Response: @response', [
-        '@message' => $e->getMessage(),
-        '@response' => $response,
+    catch (\JsonException $e) {
+      \Drupal::logger('edaitorial')->warning('Failed to parse AI response in @plugin: @error. Response: @response', [
+        '@plugin' => $this->getPluginId(),
+        '@error' => $e->getMessage(),
+        '@response' => substr($response, 0, 200) . (strlen($response) > 200 ? '...' : ''),
       ]);
     }
     
     return [];
+  }
+
+  /**
+   * Validate and sanitize issues array from AI response.
+   *
+   * @param array $issues
+   *   Raw issues array from AI.
+   *
+   * @return array
+   *   Validated issues array.
+   */
+  protected function validateIssuesArray(array $issues): array {
+    $validated = [];
+    
+    foreach ($issues as $issue) {
+      if (!is_array($issue)) {
+        continue;
+      }
+      
+      // Ensure required fields exist with defaults
+      $validated_issue = [
+        'description' => $issue['description'] ?? 'Unknown issue',
+        'type' => $issue['type'] ?? 'Content',
+        'severity' => $this->validateSeverity($issue['severity'] ?? 'Low'),
+        'impact' => $this->validateImpact($issue['impact'] ?? 'Low'),
+      ];
+      
+      $validated[] = $validated_issue;
+    }
+    
+    return $validated;
+  }
+
+  /**
+   * Validate severity level.
+   *
+   * @param string $severity
+   *   The severity to validate.
+   *
+   * @return string
+   *   Valid severity level.
+   */
+  protected function validateSeverity(string $severity): string {
+    $valid_severities = ['Critical', 'High', 'Medium', 'Low'];
+    return in_array($severity, $valid_severities, true) ? $severity : 'Low';
+  }
+
+  /**
+   * Validate impact level.
+   *
+   * @param string $impact
+   *   The impact to validate.
+   *
+   * @return string
+   *   Valid impact level.
+   */
+  protected function validateImpact(string $impact): string {
+    $valid_impacts = ['High', 'Medium', 'Low'];
+    return in_array($impact, $valid_impacts, true) ? $impact : 'Low';
   }
 
   /**

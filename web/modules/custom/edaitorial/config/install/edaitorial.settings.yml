@@ -2,65 +2,27 @@
 # AI provider and model are automatically obtained from Drupal AI module (ai.settings)
 use_ai: true
 
-# BATCH AI Analysis Prompt (OPTIMIZED - Single call for all checks)
-# This reduces token consumption by ~75% compared to individual checker calls
+# BATCH AI Analysis Prompt (OPTIMIZED for SPEED - Single call)
 batch_analysis_prompt: |
-  Analyze the following content for ALL these aspects and return a SINGLE JSON array with all issues found:
+  Analyze content and return JSON array of issues:
   
-  CONTENT TO ANALYZE:
   Title: {title}
-  URL: {url}
   Content: {body}
-  Word count: {word_count}
-  Available internal nodes: {available_nodes}
+  Words: {word_count}
+  Links: {extracted_links}
   
-  PERFORM ALL THESE CHECKS:
+  CHECK:
+  1. SEO (type:"SEO"): Title 30-60 chars, H1 tags, meta, keywords, structure
+  2. Typos (type:"Typos"): Spelling errors, repeated words
+  3. Links (type:"Links"): Broken links, empty href, poor anchor text
+  4. Content (type:"Content"): Structure, readability, lists, CTAs
+  5. Accessibility (type:"Accessibility"): Alt text, ARIA, contrast
   
-  1. SEO ANALYSIS:
-     - Title length (optimal: 30-60 characters)
-     - Meta description presence and length
-     - Content length (minimum 300 words)
-     - Multiple H1 tags (should have only one)
-     - Keywords from title present in content
-     - URL structure
+  JSON format:
+  [{"description":"issue","type":"SEO|Typos|Links|Content|Accessibility","severity":"Critical|High|Medium|Low"}]
   
-  2. TYPOS & SPELLING:
-     - Common typos (teh→the, recieve→receive, definately→definitely, etc.)
-     - Repeated words (e.g., "the the", "and and")
-     - Spelling errors in title and body
-  
-  3. BROKEN LINKS:
-     - Empty links (href="" or href="#")
-     - Broken internal links (links to nodes that don't exist in available_nodes list)
-     - Poor anchor text ("click here", "read more", "here", etc.)
-     - Links with empty or missing text
-  
-  4. CONTENT SUGGESTIONS:
-     - Content structure (headings for long content > 300 words)
-     - Use of lists for better organization
-     - Sentence length and readability
-     - Call-to-action presence
-     - Power words in title (How, Guide, Best, Top, Ultimate)
-     - Numbers in title for engagement
-  
-  Return ONLY a JSON array with this exact format:
-  [
-    {
-      "description": "Clear, specific description of the issue or suggestion",
-      "type": "SEO|Content|Accessibility|Security",
-      "severity": "Critical|High|Medium|Low",
-      "impact": "High|Medium|Low"
-    }
-  ]
-  
-  SEVERITY GUIDELINES:
-  - Critical: Major SEO/accessibility issues, broken links
-  - High: Multiple typos, missing meta tags, poor structure
-  - Medium: Minor SEO issues, 1-4 typos, suggestions
-  - Low: Enhancement suggestions
-  
-  If no issues found, return empty array: []
-  Return ONLY valid JSON, no additional text or explanation.
+  Severity: Critical(broken links,major SEO), High(5+typos,missing meta), Medium(1-4typos,minor SEO), Low(suggestions)
+  Return ONLY JSON array, no text.
 
 # Individual AI Prompts (LEGACY - Used only as fallback)
 seo_prompt: |
