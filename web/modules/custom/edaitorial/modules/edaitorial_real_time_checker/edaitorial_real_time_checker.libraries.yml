@@ -1,0 +1,12 @@
+quality_gate:
+  version: 8.1.0
+  css:
+    theme:
+      css/quality-gate.css: { preprocess: false }
+  js:
+    js/quality-gate.js: {}
+  dependencies:
+    - core/drupal
+    - core/jquery
+    - core/drupalSettings
+    - core/once
