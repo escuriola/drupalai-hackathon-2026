@@ -1,0 +1,160 @@
+<?php
+
+/**
+ * @file
+ * edAItorial module file.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_theme().
+ */
+function edaitorial_theme($existing, $type, $theme, $path) {
+  return [
+    'edaitorial_dashboard' => [
+      'variables' => [
+        'metrics' => [],
+      ],
+      'template' => 'edaitorial-dashboard',
+    ],
+    'edaitorial_seo_overview' => [
+      'variables' => [
+        'metrics' => [],
+      ],
+      'template' => 'edaitorial-seo-overview',
+    ],
+    'edaitorial_accessibility' => [
+      'variables' => [
+        'metrics' => [],
+      ],
+      'template' => 'edaitorial-accessibility',
+    ],
+    'edaitorial_content_audit' => [
+      'variables' => [
+        'audit_results' => [],
+      ],
+      'template' => 'edaitorial-content-audit',
+    ],
+    'edaitorial_content_audit_detail' => [
+      'variables' => [
+        'node' => NULL,
+        'audit_data' => [],
+      ],
+      'template' => 'edaitorial-content-audit-detail',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter() for node_form.
+ */
+function edaitorial_form_node_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  $config = \Drupal::config('edaitorial.settings');
+
+  if ($config->get('enable_pre_publish_check')) {
+    $form['edaitorial'] = [
+      '#type' => 'details',
+      '#title' => t('edAItorial'),
+      '#group' => 'advanced',
+      '#weight' => 100,
+    ];
+
+    $form['edaitorial']['analyze_button'] = [
+      '#type' => 'button',
+      '#value' => t('Analyze Content'),
+      '#ajax' => [
+        'callback' => 'edaitorial_analyze_content',
+        'wrapper' => 'edaitorial-results',
+      ],
+    ];
+
+    $form['edaitorial']['results'] = [
+      '#type' => 'markup',
+      '#markup' => '<div id="edaitorial-results"></div>',
+    ];
+  }
+}
+
+/**
+ * AJAX callback to analyze content.
+ */
+function edaitorial_analyze_content(array &$form, FormStateInterface $form_state) {
+  $node = $form_state->getFormObject()->getEntity();
+
+  if ($node instanceof NodeInterface) {
+    $analyzer = \Drupal::service('edaitorial.analyzer');
+    $results = $analyzer->analyzeBeforePublish($node);
+
+    $output = '<div class="edaitorial-results">';
+    $output .= '<h3>' . t('Analysis Results') . '</h3>';
+    $output .= '<p>' . t('Overall Score: @score/100', ['@score' => $results['overall_score']]) . '</p>';
+
+    if (!empty($results['seo']['issues'])) {
+      $output .= '<h4>' . t('SEO Issues') . '</h4><ul>';
+      foreach ($results['seo']['issues'] as $issue) {
+        $output .= '<li>' . $issue . '</li>';
+      }
+      $output .= '</ul>';
+    }
+
+    if (!empty($results['accessibility']['issues'])) {
+      $output .= '<h4>' . t('Accessibility Issues') . '</h4><ul>';
+      foreach ($results['accessibility']['issues'] as $issue) {
+        $output .= '<li>' . $issue . '</li>';
+      }
+      $output .= '</ul>';
+    }
+
+    $output .= '</div>';
+
+    $response = new \Drupal\Core\Ajax\AjaxResponse();
+    $response->addCommand(new \Drupal\Core\Ajax\HtmlCommand('#edaitorial-results', $output));
+    return $response;
+  }
+
+  return $form['edaitorial']['results'];
+}
+
+/**
+ * Implements hook_cron().
+ */
+function edaitorial_cron() {
+  // Save current metrics for historical comparison
+  $metrics_collector = \Drupal::service('edaitorial.metrics_collector');
+  $seo_analyzer = \Drupal::service('edaitorial.seo_analyzer');
+  $a11y_analyzer = \Drupal::service('edaitorial.accessibility_analyzer');
+  
+  $state = \Drupal::state();
+  $state->set('edaitorial.previous_metrics', [
+    'pages_crawled' => \Drupal::entityQuery('node')
+      ->condition('status', 1)
+      ->accessCheck(FALSE)
+      ->count()
+      ->execute(),
+    'seo_issues' => $seo_analyzer->countSeoIssues(),
+    'a11y_issues' => $a11y_analyzer->countAccessibilityIssues(),
+    'timestamp' => time(),
+  ]);
+}
+
+/**
+ * Implements hook_page_attachments().
+ */
+function edaitorial_page_attachments(array &$attachments) {
+  // Add viewport meta tag for responsive design
+  $route_match = \Drupal::routeMatch();
+  if (strpos($route_match->getRouteName(), 'edaitorial.') === 0) {
+    $attachments['#attached']['html_head'][] = [
+      [
+        '#tag' => 'meta',
+        '#attributes' => [
+          'name' => 'viewport',
+          'content' => 'width=device-width, initial-scale=1, shrink-to-fit=no',
+        ],
+      ],
+      'edaitorial_viewport',
+    ];
+  }
+}

@@ -1,0 +1,36 @@
+edaitorial_real_time_checker.settings:
+  path: '/admin/config/content/edaitorial/quality-gate'
+  defaults:
+    _form: '\Drupal\edaitorial_real_time_checker\Form\SettingsForm'
+    _title: 'Quality Gate'
+  requirements:
+    _permission: 'administer edaitorial real time checker settings'
+  options:
+    _admin_route: TRUE
+
+edaitorial_real_time_checker.analyze:
+  path: '/edaitorial/real-time/analyze'
+  defaults:
+    _controller: '\Drupal\edaitorial_real_time_checker\Controller\RealTimeController::analyze'
+  requirements:
+    _permission: 'view edaitorial'
+  options:
+    _ajax: TRUE
+
+edaitorial_real_time_checker.save_analysis:
+  path: '/edaitorial/real-time/save-analysis'
+  defaults:
+    _controller: '\Drupal\edaitorial_real_time_checker\Controller\RealTimeController::saveAnalysis'
+  requirements:
+    _permission: 'view edaitorial'
+  options:
+    _ajax: TRUE
+
+edaitorial_real_time_checker.ask_ai:
+  path: '/edaitorial/real-time/ask-ai'
+  defaults:
+    _controller: '\Drupal\edaitorial_real_time_checker\Controller\RealTimeController::askAi'
+  requirements:
+    _permission: 'view edaitorial'
+  options:
+    _ajax: TRUE

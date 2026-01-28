@@ -1,0 +1,48 @@
+edaitorial.dashboard:
+  path: '/admin/config/content/edaitorial'
+  defaults:
+    _controller: '\Drupal\edaitorial\Controller\DashboardController::dashboard'
+    _title: 'edAItorial Dashboard'
+  requirements:
+    _permission: 'view edaitorial'
+
+edaitorial.seo_overview:
+  path: '/admin/config/content/edaitorial/seo'
+  defaults:
+    _controller: '\Drupal\edaitorial\Controller\DashboardController::seoOverview'
+    _title: 'SEO Overview'
+  requirements:
+    _permission: 'view edaitorial'
+
+edaitorial.accessibility:
+  path: '/admin/config/content/edaitorial/accessibility'
+  defaults:
+    _controller: '\Drupal\edaitorial\Controller\DashboardController::accessibility'
+    _title: 'Accessibility'
+  requirements:
+    _permission: 'view edaitorial'
+
+edaitorial.content_audit:
+  path: '/admin/config/content/edaitorial/content-audit'
+  defaults:
+    _controller: '\Drupal\edaitorial\Controller\DashboardController::contentAudit'
+    _title: 'Content Audit'
+  requirements:
+    _permission: 'view edaitorial'
+
+edaitorial.content_audit_detail:
+  path: '/admin/config/content/edaitorial/content-audit/{node}'
+  defaults:
+    _controller: '\Drupal\edaitorial\Controller\DashboardController::contentAuditDetail'
+    _title_callback: '\Drupal\edaitorial\Controller\DashboardController::detailTitle'
+  requirements:
+    _permission: 'view edaitorial'
+    node: \d+
+
+edaitorial.settings:
+  path: '/admin/config/content/edaitorial/settings'
+  defaults:
+    _form: '\Drupal\edaitorial\Form\SettingsForm'
+    _title: 'edAItorial Settings'
+  requirements:
+    _permission: 'administer edaitorial'

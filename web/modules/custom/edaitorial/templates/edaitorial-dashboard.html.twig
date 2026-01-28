@@ -1,0 +1,202 @@
+{#
+/**
+ * @file
+ * Template for the edAItorial Dashboard.
+ *
+ * Available variables:
+ * - metrics: Array containing all dashboard metrics.
+ */
+#}
+
+<div class="edaitorial-dashboard">
+  <div class="dashboard-header">
+    <h2>{{ 'SEO & Accessibility Overview'|t }}</h2>
+    <div class="dashboard-actions">
+      <button class="button button--primary" id="run-audit">{{ 'Run Audit'|t }}</button>
+    </div>
+  </div>
+
+  {% if metrics.pages_crawled == 0 %}
+    <div class="dashboard-notice">
+      <div class="notice-content">
+        <h3>{{ 'No Content Found'|t }}</h3>
+        <p>{{ 'There are no published pages to analyze. Create some content to see the dashboard in action!'|t }}</p>
+        <a href="/node/add" class="button button--primary">{{ 'Create Content'|t }}</a>
+      </div>
+    </div>
+  {% else %}
+
+  {# Quick Info Banner #}
+  <div class="dashboard-info-banner">
+    <div class="banner-content">
+      <strong>{{ 'Fast Dashboard Mode'|t }}</strong>
+      <p>{{ 'This view shows basic metrics for quick overview. For detailed AI-powered analysis of each page, visit'|t }} <a href="/admin/config/content/edaitorial/content-audit">{{ 'Content Audit'|t }}</a>.</p>
+    </div>
+  </div>
+
+  {# Top Metrics Row #}
+  <div class="metrics-row">
+    {# Overall Health Score #}
+    <div class="metric-card overall-score">
+      <div class="circular-gauge">
+        <svg viewBox="0 0 200 200" class="gauge-svg">
+          <circle cx="100" cy="100" r="80" class="gauge-bg"></circle>
+          <circle cx="100" cy="100" r="80" class="gauge-progress" 
+                  style="stroke-dashoffset: {{ 502 - (502 * metrics.overall_score / 100) }}"></circle>
+          <text x="100" y="95" class="gauge-score">{{ metrics.overall_score }}</text>
+          <text x="100" y="115" class="gauge-label">{{ 'Good'|t }}</text>
+        </svg>
+      </div>
+      <div class="metric-details">
+        <h3>{{ 'Overall Health Score'|t }}</h3>
+        <p>{{ 'Your site structure looks good. For detailed analysis, check Content Audit.'|t }}</p>
+        <div class="sub-scores">
+          <span class="badge">{{ 'SEO:'|t }} {{ metrics.seo_score }}</span>
+          <span class="badge">{{ 'A11y:'|t }} {{ metrics.a11y_score }}</span>
+        </div>
+      </div>
+    </div>
+
+    {# Pages Analyzed #}
+    <div class="metric-card">
+      <div class="metric-value">{{ metrics.pages_crawled }}</div>
+      <div class="metric-label">{{ 'Pages Analyzed'|t }}</div>
+      <div class="metric-change positive">{{ metrics.pages_crawled_change }}%</div>
+      <div class="metric-subtitle">{{ 'Published + Drafts'|t }}</div>
+    </div>
+
+    {# Quick Actions #}
+    <div class="metric-card metric-card--action">
+      <div class="metric-label">{{ 'Run Detailed Analysis'|t }}</div>
+      <p class="metric-description">{{ 'Get AI-powered insights for each page'|t }}</p>
+      <a href="/admin/config/content/edaitorial/content-audit" class="button button--primary">
+        {{ 'Content Audit'|t }}
+      </a>
+    </div>
+
+    {# Quick Actions #}
+    <div class="metric-card metric-card--action">
+      <div class="metric-label">{{ 'Configure AI Settings'|t }}</div>
+      <p class="metric-description">{{ 'Customize prompts and checkers'|t }}</p>
+      <a href="/admin/config/content/edaitorial/settings" class="button button--secondary">
+        {{ 'Settings'|t }}
+      </a>
+    </div>
+
+    {# Average Load Time #}
+    <div class="metric-card">
+      <div class="metric-value">{{ metrics.avg_load_time }}</div>
+      <div class="metric-label">{{ 'Avg. Load Time'|t }}</div>
+      <div class="metric-change positive">{{ metrics.avg_load_time_change }}%</div>
+      <div class="metric-subtitle">{{ 'improvement'|t }}</div>
+    </div>
+  </div>
+
+  {# Content Sections #}
+  <div class="dashboard-content">
+    {# SEO Health #}
+    <div class="content-section seo-health">
+      <div class="section-header">
+        <h3>{{ 'SEO Health'|t }}</h3>
+        <div class="score-badge">{{ metrics.seo_score }}<span class="score-label">Score</span></div>
+      </div>
+      <p class="section-subtitle">{{ 'Technical SEO checklist status'|t }}</p>
+
+      <div class="checklist">
+        {% for key, check in metrics.seo_checks %}
+          <div class="check-item status-{{ check.status }}">
+            <div class="check-content">
+              <strong>{{ check.label }}</strong>
+              <span class="check-message">{{ check.message }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      
+      <div class="section-cta">
+        <a href="/admin/config/content/edaitorial/seo" class="button button--secondary">
+          {{ 'View Detailed SEO Analysis'|t }} →
+        </a>
+      </div>
+    </div>
+
+    {# WCAG Compliance #}
+    <div class="content-section wcag-compliance">
+      <div class="section-header">
+        <h3>{{ 'WCAG Compliance'|t }}</h3>
+        <div class="score-badge">{{ metrics.a11y_score }}<span class="score-label">Score</span></div>
+      </div>
+      <p class="section-subtitle">{{ 'Web Content Accessibility Guidelines'|t }}</p>
+
+      {# Level A #}
+      <div class="compliance-level">
+        <h4><span class="level-badge">{{ 'Level A'|t }}</span> {{ 'Minimum Compliance'|t }}</h4>
+        {% for principle, data in metrics.wcag_level_a %}
+          <div class="compliance-bar">
+            <span class="principle-name">{{ principle|capitalize }}</span>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: {{ (data.passed / data.total * 100)|round }}%"></div>
+            </div>
+            <span class="progress-text">{{ data.passed }}/{{ data.total }}</span>
+          </div>
+        {% endfor %}
+      </div>
+
+      {# Level AA #}
+      <div class="compliance-level">
+        <h4><span class="level-badge">{{ 'Level AA'|t }}</span> {{ 'Enhanced Compliance'|t }}</h4>
+        {% for principle, data in metrics.wcag_level_aa %}
+          <div class="compliance-bar">
+            <span class="principle-name">{{ principle|capitalize }}</span>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: {{ (data.passed / data.total * 100)|round }}%"></div>
+            </div>
+            <span class="progress-text">{{ data.passed }}/{{ data.total }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# Active Issues and Recent Activity #}
+  <div class="dashboard-footer">
+    <div class="footer-section active-issues">
+      <h3>{{ 'Content Analysis'|t }}</h3>
+      <p class="section-subtitle">{{ 'AI-powered page-by-page analysis'|t }}</p>
+      
+      <div class="analysis-cta">
+        <div class="cta-content">
+          <h4>{{ 'Ready for Deep Analysis?'|t }}</h4>
+          <p>{{ 'Get AI-powered insights for:'|t }}</p>
+          <ul class="cta-features">
+            <li>{{ 'SEO optimization recommendations'|t }}</li>
+            <li>{{ 'Content quality analysis'|t }}</li>
+            <li>{{ 'Typo and grammar detection'|t }}</li>
+            <li>{{ 'Broken link identification'|t }}</li>
+            <li>{{ 'Accessibility compliance'|t }}</li>
+          </ul>
+          <a href="/admin/config/content/edaitorial/content-audit" class="button button--large button--primary">
+            {{ 'Start Content Audit'|t }}
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-section recent-activity">
+      <h3>{{ 'Recent Activity'|t }}</h3>
+      <p class="section-subtitle">{{ 'Latest audits and changes'|t }}</p>
+      <div class="activity-list">
+        {% for activity in metrics.recent_activity %}
+          <div class="activity-item">
+            <div class="activity-content">
+              <strong>{{ activity.action }}</strong>
+              <span class="activity-time">{{ activity.timestamp|format_date('medium') }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <a href="#" class="view-all-link">{{ 'View all'|t }}</a>
+    </div>
+  </div>
+  {% endif %}
+</div>

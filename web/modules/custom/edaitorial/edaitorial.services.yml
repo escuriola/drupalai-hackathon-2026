@@ -1,0 +1,20 @@
+services:
+  edaitorial.analyzer:
+    class: Drupal\edaitorial\Service\ContentAnalyzer
+    arguments: ['@entity_type.manager', '@config.factory', '@logger.factory']
+
+  edaitorial.seo_analyzer:
+    class: Drupal\edaitorial\Service\SeoAnalyzer
+    arguments: ['@entity_type.manager', '@config.factory']
+
+  edaitorial.accessibility_analyzer:
+    class: Drupal\edaitorial\Service\AccessibilityAnalyzer
+    arguments: ['@entity_type.manager', '@config.factory']
+
+  edaitorial.metrics_collector:
+    class: Drupal\edaitorial\Service\MetricsCollector
+    arguments: ['@edaitorial.seo_analyzer', '@edaitorial.accessibility_analyzer', '@plugin.manager.edaitorial_checker']
+
+  plugin.manager.edaitorial_checker:
+    class: Drupal\edaitorial\EdaitorialCheckerManager
+    parent: default_plugin_manager

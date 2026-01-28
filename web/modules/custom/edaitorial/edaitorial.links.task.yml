@@ -1,0 +1,29 @@
+edaitorial.dashboard:
+  route_name: edaitorial.dashboard
+  title: 'Dashboard'
+  base_route: edaitorial.dashboard
+  weight: -10
+
+edaitorial.seo_overview:
+  route_name: edaitorial.seo_overview
+  title: 'SEO Overview'
+  base_route: edaitorial.dashboard
+  weight: 0
+
+edaitorial.accessibility:
+  route_name: edaitorial.accessibility
+  title: 'Accessibility'
+  base_route: edaitorial.dashboard
+  weight: 10
+
+edaitorial.content_audit:
+  route_name: edaitorial.content_audit
+  title: 'Content Audit'
+  base_route: edaitorial.dashboard
+  weight: 20
+
+edaitorial.settings:
+  route_name: edaitorial.settings
+  title: 'Settings'
+  base_route: edaitorial.dashboard
+  weight: 100

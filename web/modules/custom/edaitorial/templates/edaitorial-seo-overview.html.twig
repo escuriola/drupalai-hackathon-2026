@@ -1,0 +1,171 @@
+{#
+/**
+ * @file
+ * Template for the SEO Overview page.
+ *
+ * Available variables:
+ * - metrics: SEO metrics data.
+ */
+#}
+
+<div class="edaitorial-seo-overview">
+  {# Header Section #}
+  <div class="seo-header">
+    <div class="seo-header-content">
+      <h1 class="seo-title">
+        <span class="seo-icon">🔍</span>
+        {{ 'SEO Overview'|t }}
+      </h1>
+      <p class="seo-subtitle">{{ 'Comprehensive analysis of your site\'s search engine optimization'|t }}</p>
+    </div>
+    <div class="seo-header-actions">
+      <button class="button button--action" id="refresh-seo">
+        <span class="button-icon">🔄</span>
+        {{ 'Refresh Analysis'|t }}
+      </button>
+    </div>
+  </div>
+
+  {# Score Hero Section #}
+  <div class="seo-hero">
+    <div class="seo-score-card">
+      <div class="score-circle-wrapper">
+        <svg class="score-circle" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <circle class="score-bg" cx="100" cy="100" r="85" fill="none" stroke="#f0f0f0" stroke-width="12"></circle>
+          <circle class="score-progress" cx="100" cy="100" r="85" 
+                  fill="none" 
+                  stroke="#667eea" 
+                  stroke-width="12" 
+                  stroke-linecap="round"
+                  stroke-dasharray="534"
+                  stroke-dashoffset="{{ 534 - (534 * metrics.seo_score / 100) }}"></circle>
+        </svg>
+        <div class="score-content">
+          <div class="score-number">{{ metrics.seo_score }}</div>
+          <div class="score-max">/100</div>
+        </div>
+      </div>
+      <div class="score-info">
+        <h3 class="score-title">{{ 'Overall SEO Score'|t }}</h3>
+        <p class="score-description">
+          {% if metrics.seo_score >= 80 %}
+            {{ 'Excellent! Your site is well optimized for search engines.'|t }}
+          {% elseif metrics.seo_score >= 60 %}
+            {{ 'Good progress, but there\'s room for improvement.'|t }}
+          {% else %}
+            {{ 'Needs attention. Focus on fixing critical issues first.'|t }}
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <div class="seo-stats-grid">
+      <div class="stat-box">
+        <div class="stat-icon">📄</div>
+        <div class="stat-value">{{ metrics.pages_analyzed }}</div>
+        <div class="stat-label">{{ 'Pages Analyzed'|t }}</div>
+      </div>
+      <div class="stat-box stat-issues">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-value">{{ metrics.seo_issues }}</div>
+        <div class="stat-label">{{ 'SEO Issues'|t }}</div>
+      </div>
+      <div class="stat-box stat-passed">
+        <div class="stat-icon">✓</div>
+        <div class="stat-value">{{ metrics.seo_checks|length - metrics.seo_issues }}</div>
+        <div class="stat-label">{{ 'Checks Passed'|t }}</div>
+      </div>
+    </div>
+  </div>
+
+  {# Detailed Checks Section #}
+  <div class="seo-checks-section">
+    <div class="section-header">
+      <h2 class="section-title">{{ 'Detailed SEO Checks'|t }}</h2>
+      <div class="section-summary">
+        {% set passed = 0 %}
+        {% set failed = 0 %}
+        {% for key, check in metrics.seo_checks %}
+          {% if check.status == 'pass' %}
+            {% set passed = passed + 1 %}
+          {% else %}
+            {% set failed = failed + 1 %}
+          {% endif %}
+        {% endfor %}
+        <span class="summary-passed">{{ passed }} {{ 'passed'|t }}</span>
+        <span class="summary-separator">•</span>
+        <span class="summary-failed">{{ failed }} {{ 'need attention'|t }}</span>
+      </div>
+    </div>
+
+    <div class="checks-grid">
+      {% for key, check in metrics.seo_checks %}
+        <div class="check-card status-{{ check.status }}">
+          <div class="check-header">
+            <div class="check-status-icon">
+              {% if check.status == 'pass' %}
+                <span class="icon-success">✓</span>
+              {% elseif check.status == 'warning' %}
+                <span class="icon-warning">⚠</span>
+              {% else %}
+                <span class="icon-error">✕</span>
+              {% endif %}
+            </div>
+            <h3 class="check-title">{{ check.label }}</h3>
+          </div>
+          
+          <div class="check-body">
+            <p class="check-message">{{ check.message }}</p>
+            
+            {% if check.count > 0 %}
+              <div class="check-issues">
+                <span class="issues-badge">
+                  <span class="issues-count">{{ check.count }}</span>
+                  {{ check.count == 1 ? 'issue' : 'issues' }}
+                </span>
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="check-footer">
+            {% if check.status == 'pass' %}
+              <span class="check-status-label status-good">{{ 'Optimized'|t }}</span>
+            {% elseif check.status == 'warning' %}
+              <span class="check-status-label status-warning">{{ 'Needs improvement'|t }}</span>
+            {% else %}
+              <span class="check-status-label status-error">{{ 'Critical'|t }}</span>
+            {% endif %}
+            
+            {% if check.count > 0 %}
+              <a href="/admin/config/content/edaitorial/content-audit" class="check-action">
+                {{ 'View details'|t }} →
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# Recommendations Section #}
+  <div class="seo-recommendations">
+    <h2 class="section-title">{{ 'Quick Wins'|t }}</h2>
+    <div class="recommendations-grid">
+      <div class="recommendation-card">
+        <div class="recommendation-icon">💡</div>
+        <h3>{{ 'Add Meta Descriptions'|t }}</h3>
+        <p>{{ 'Pages without meta descriptions miss opportunities to improve click-through rates from search results.'|t }}</p>
+      </div>
+      <div class="recommendation-card">
+        <div class="recommendation-icon">🎯</div>
+        <h3>{{ 'Optimize Page Titles'|t }}</h3>
+        <p>{{ 'Ensure all pages have unique, descriptive titles between 50-60 characters.'|t }}</p>
+      </div>
+      <div class="recommendation-card">
+        <div class="recommendation-icon">🔗</div>
+        <h3>{{ 'Fix Broken Links'|t }}</h3>
+        <p>{{ 'Broken links hurt user experience and SEO rankings. Regular audits help maintain site quality.'|t }}</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,185 @@
+# edAItorial module configuration
+# AI provider and model are automatically obtained from Drupal AI module (ai.settings)
+use_ai: true
+
+# BATCH AI Analysis Prompt (OPTIMIZED - Single call for all checks)
+# This reduces token consumption by ~75% compared to individual checker calls
+batch_analysis_prompt: |
+  Analyze the following content for ALL these aspects and return a SINGLE JSON array with all issues found:
+  
+  CONTENT TO ANALYZE:
+  Title: {title}
+  URL: {url}
+  Content: {body}
+  Word count: {word_count}
+  Available internal nodes: {available_nodes}
+  
+  PERFORM ALL THESE CHECKS:
+  
+  1. SEO ANALYSIS:
+     - Title length (optimal: 30-60 characters)
+     - Meta description presence and length
+     - Content length (minimum 300 words)
+     - Multiple H1 tags (should have only one)
+     - Keywords from title present in content
+     - URL structure
+  
+  2. TYPOS & SPELLING:
+     - Common typos (teh→the, recieve→receive, definately→definitely, etc.)
+     - Repeated words (e.g., "the the", "and and")
+     - Spelling errors in title and body
+  
+  3. BROKEN LINKS:
+     - Empty links (href="" or href="#")
+     - Broken internal links (links to nodes that don't exist in available_nodes list)
+     - Poor anchor text ("click here", "read more", "here", etc.)
+     - Links with empty or missing text
+  
+  4. CONTENT SUGGESTIONS:
+     - Content structure (headings for long content > 300 words)
+     - Use of lists for better organization
+     - Sentence length and readability
+     - Call-to-action presence
+     - Power words in title (How, Guide, Best, Top, Ultimate)
+     - Numbers in title for engagement
+  
+  Return ONLY a JSON array with this exact format:
+  [
+    {
+      "description": "Clear, specific description of the issue or suggestion",
+      "type": "SEO|Content|Accessibility|Security",
+      "severity": "Critical|High|Medium|Low",
+      "impact": "High|Medium|Low"
+    }
+  ]
+  
+  SEVERITY GUIDELINES:
+  - Critical: Major SEO/accessibility issues, broken links
+  - High: Multiple typos, missing meta tags, poor structure
+  - Medium: Minor SEO issues, 1-4 typos, suggestions
+  - Low: Enhancement suggestions
+  
+  If no issues found, return empty array: []
+  Return ONLY valid JSON, no additional text or explanation.
+
+# Individual AI Prompts (LEGACY - Used only as fallback)
+seo_prompt: |
+  Analyze the following content for SEO issues and return a JSON array of issues found.
+  
+  Title: {title}
+  URL: {url}
+  Content: {body}
+  
+  Check for:
+  1. Title length (optimal: 30-60 characters)
+  2. Duplicate titles across the site
+  3. Meta description presence and length
+  4. Content length (minimum 300 words)
+  5. Multiple H1 tags (should have only one)
+  6. Text-to-HTML ratio
+  7. Keywords from title present in content
+  8. URL structure
+  
+  Return ONLY a JSON array with this format:
+  [
+    {
+      "description": "Issue description",
+      "type": "SEO",
+      "severity": "High|Medium|Low",
+      "impact": "High|Medium|Low"
+    }
+  ]
+  
+  If no issues, return empty array: []
+
+broken_links_prompt: |
+  Analyze the following HTML content for broken or problematic links and return a JSON array of issues.
+  
+  Content: {body}
+  Available internal nodes: {available_nodes}
+  
+  Check for:
+  1. Empty links (href="" or href="#")
+  2. Broken internal links (links to /node/X that don't exist)
+  3. Poor anchor text ("click here", "read more", "here", etc.)
+  4. External links without rel="noopener" or rel="noreferrer"
+  5. Links with empty or missing text
+  
+  Return ONLY a JSON array with this format:
+  [
+    {
+      "description": "Issue description with count",
+      "type": "SEO|Accessibility|Security",
+      "severity": "High|Medium|Low",
+      "impact": "High|Medium|Low"
+    }
+  ]
+  
+  If no issues, return empty array: []
+
+typos_prompt: |
+  Analyze the following content for spelling errors, typos, and repeated words.
+  
+  Title: {title}
+  Content: {body}
+  
+  Check for:
+  1. Common typos (teh→the, recieve→receive, definately→definitely, etc.)
+  2. Repeated words (e.g., "the the", "and and")
+  3. Spelling errors in title
+  4. Spelling errors in body content
+  
+  Return ONLY a JSON array with this format:
+  [
+    {
+      "description": "Typo description (e.g., 'Possible typos in title: Teh → the' or '5 possible typos detected: recieve → receive, ...')",
+      "type": "Content",
+      "severity": "High|Medium|Low",
+      "impact": "Medium|Low"
+    }
+  ]
+  
+  Severity guide:
+  - High: > 10 typos
+  - Medium: 5-10 typos or typos in title
+  - Low: 1-4 typos
+  
+  If no issues, return empty array: []
+
+suggestions_prompt: |
+  Analyze the following content and provide improvement suggestions.
+  
+  Title: {title}
+  Content: {body}
+  Word count: {word_count}
+  
+  Provide suggestions for:
+  1. Content structure (headings for long content > 300 words)
+  2. Use of lists for better organization
+  3. Adding images or visual content
+  4. Sentence length and readability
+  5. Paragraph structure
+  6. Active vs passive voice
+  7. Call-to-action presence
+  8. External links for credibility
+  9. Power words in title (How, Guide, Best, Top, Ultimate)
+  10. Numbers in title for engagement
+  
+  Return ONLY a JSON array with this format:
+  [
+    {
+      "description": "Suggestion: [specific actionable advice]",
+      "type": "Content|SEO",
+      "severity": "Low",
+      "impact": "Low"
+    }
+  ]
+  
+  Focus on actionable, specific suggestions. If content is good, return empty array: []
+
+# Other settings
+enable_pre_publish_check: true
+auto_suggestions: true
+min_title_length: 30
+max_title_length: 60
+wcag_level: 'AA'

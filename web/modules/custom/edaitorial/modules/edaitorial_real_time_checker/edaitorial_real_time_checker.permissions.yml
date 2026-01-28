@@ -1,0 +1,13 @@
+bypass edaitorial real time checker:
+  title: 'Bypass edAItorial Quality Gate settings'
+  description: 'Allow users to bypass the Quality Gate checks'
+  restrict access: true
+  roles:
+    - administrator
+
+administer edaitorial real time checker settings:
+  title: 'Administer edAItorial Quality Gate settings'
+  description: 'Allow users to access and modify the edAItorial Quality Gate settings'
+  restrict access: true
+  roles:
+    - administrator

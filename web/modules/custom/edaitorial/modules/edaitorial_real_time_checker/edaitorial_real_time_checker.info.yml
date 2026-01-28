@@ -1,0 +1,14 @@
+name: 'edAItorial Quality Gate'
+description: 'Adds a quality gate workflow state that requires a minimum score before publishing'
+type: module
+core_version_requirement: ^10 || ^11
+package: 'DrupalAI Hackathon'
+
+dependencies:
+  - drupal:node
+  - drupal:workflows
+  - drupal:content_moderation
+  - edaitorial:edaitorial
+  - drupal:ai (>= 1.2)
+
+configure: edaitorial_real_time_checker.settings

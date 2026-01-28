@@ -1,0 +1,8 @@
+administer edaitorial:
+  title: 'Administer edAItorial'
+  description: 'Access and configure the edAItorial dashboard'
+  restrict access: true
+
+view edaitorial:
+  title: 'View edAItorial Dashboard'
+  description: 'View the AI-powered editorial insights'

@@ -1,0 +1,10 @@
+name: 'edAItorial'
+type: module
+description: 'AI-powered editorial assistant with SEO and Accessibility insights for content analysis and optimization.'
+package: 'DrupalAI Hackathon'
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:node
+  - drupal:user
+  - drupal:system
+  - drupal:ai

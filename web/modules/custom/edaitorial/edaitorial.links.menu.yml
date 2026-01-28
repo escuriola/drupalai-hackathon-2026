@@ -1,0 +1,13 @@
+edaitorial.dashboard:
+  title: 'edAItorial'
+  description: 'AI-powered editorial assistant'
+  route_name: edaitorial.dashboard
+  parent: system.admin_config_content
+  weight: -10
+
+edaitorial.settings:
+  title: 'Settings'
+  description: 'Configure edAItorial'
+  route_name: edaitorial.settings
+  parent: edaitorial.dashboard
+  weight: 100
