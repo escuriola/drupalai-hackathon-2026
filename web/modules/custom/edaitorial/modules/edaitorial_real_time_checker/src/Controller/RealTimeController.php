@@ -52,57 +52,57 @@ class RealTimeController extends ControllerBase {
     $title = $request->request->get('title', '');
     $body = $request->request->get('body', '');
     $content_type = $request->request->get('content_type', 'article');
-    
+
     // No minimum length restriction - analyze any content
-    
+
     try {
       // Perform analysis
       $results = $this->analyzer->analyzeContent($title, $body, $content_type);
-      
+
       // Log the results for debugging
       $this->getLogger('quality_gate')->info('Analysis results: @results', [
         '@results' => print_r($results, TRUE)
       ]);
-      
+
       // Ensure we have all required keys
       if (!isset($results['score'])) {
         $this->getLogger('quality_gate')->error('Missing score in results!');
         $results['score'] = 0;
       }
-      
+
       if (!isset($results['category_scores'])) {
         $this->getLogger('quality_gate')->error('Missing category_scores in results!');
         $results['category_scores'] = [];
       }
-      
+
       $response_data = [
         'status' => 'success',
         'score' => (int) $results['score'],
         'score_class' => $results['score_class'] ?? 'poor',
         'category_scores' => $results['category_scores'] ?? [
-          'seo' => 0,
-          'accessibility' => 0,
-          'typos' => 0,
-          'links' => 0,
-          'content' => 0,
-        ],
+            'seo' => 0,
+            'accessibility' => 0,
+            'typos' => 0,
+            'links' => 0,
+            'content' => 0,
+          ],
         'issues' => $results['issues'],
         'issue_count' => count($results['issues']),
         'suggestions' => $results['suggestions'] ?? [],
         'message' => $this->getScoreMessage($results['score']),
       ];
-      
+
       $this->getLogger('quality_gate')->info('Sending response: @response', [
         '@response' => json_encode($response_data)
       ]);
-      
+
       return new JsonResponse($response_data);
     }
     catch (\Exception $e) {
       $this->getLogger('edaitorial_real_time_checker')->error('Real-time analysis failed: @message', [
         '@message' => $e->getMessage(),
       ]);
-      
+
       return new JsonResponse([
         'status' => 'error',
         'message' => $this->t('Analysis failed. Please try again.'),
@@ -153,46 +153,46 @@ class RealTimeController extends ControllerBase {
     $score = $request->request->get('score');
     $category_scores_json = $request->request->get('category_scores');
     $issues_json = $request->request->get('issues');
-    
+
     if (empty($node_id)) {
       return new JsonResponse(['status' => 'error', 'message' => 'Node ID required'], 400);
     }
-    
+
     try {
       // Decode JSON strings back to arrays
       $category_scores = json_decode($category_scores_json, TRUE);
       $issues = json_decode($issues_json, TRUE);
-      
+
       if (json_last_error() !== JSON_ERROR_NONE) {
         throw new \Exception('Invalid JSON data: ' . json_last_error_msg());
       }
-      
+
       // Save permanently using State API (persists across sessions and users)
       $state = \Drupal::state();
       $cache_key = 'quality_gate.analysis.' . $node_id;
-      
+
       $data = [
         'score' => (int) $score,
         'category_scores' => $category_scores,
         'issues' => $issues,
         'timestamp' => time(),
       ];
-      
+
       $state->set($cache_key, $data);
-      
+
       $this->getLogger('quality_gate')->info('Saved analysis for node @nid: score=@score, categories=@cats', [
         '@nid' => $node_id,
         '@score' => $score,
         '@cats' => json_encode($category_scores),
       ]);
-      
+
       return new JsonResponse(['status' => 'success', 'saved' => TRUE]);
     }
     catch (\Exception $e) {
       $this->getLogger('quality_gate')->error('Failed to save analysis: @message', [
         '@message' => $e->getMessage(),
       ]);
-      
+
       return new JsonResponse(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
   }
@@ -210,24 +210,24 @@ class RealTimeController extends ControllerBase {
     $field = $request->request->get('field', 'title'); // 'title' or 'body'
     $current_value = $request->request->get('value', '');
     $context = $request->request->get('context', ''); // Additional context (e.g., body when improving title)
-    
+
     if (empty($current_value)) {
       return new JsonResponse([
         'status' => 'error',
         'message' => 'Please provide content to improve.'
       ], 400);
     }
-    
+
     try {
       // Generate AI prompt based on field
       $prompt = $this->generateAiPrompt($field, $current_value, $context);
-      
+
       // Call AI service
       $ai_response = $this->callAiForSuggestion($prompt);
-      
+
       // Parse response
       $suggestion = $this->parseAiSuggestion($ai_response, $field);
-      
+
       return new JsonResponse([
         'status' => 'success',
         'field' => $field,
@@ -241,7 +241,7 @@ class RealTimeController extends ControllerBase {
       $this->getLogger('quality_gate')->error('Ask AI failed: @message', [
         '@message' => $e->getMessage(),
       ]);
-      
+
       // Return detailed error for debugging
       return new JsonResponse([
         'status' => 'error',
@@ -261,33 +261,33 @@ class RealTimeController extends ControllerBase {
   protected function generateAiPrompt($field, $value, $context) {
     if ($field === 'title') {
       return "Improve this article title for SEO, accessibility, and European institutional tone:\n\n" .
-             "Current title: {$value}\n\n" .
-             ($context ? "Article content preview: " . substr($context, 0, 500) . "\n\n" : "") .
-             "Requirements:\n" .
-             "1. Clear, factual, institutional European tone\n" .
-             "2. Optimal length: 40-60 characters\n" .
-             "3. Include relevant keywords naturally\n" .
-             "4. Accessible language (plain English)\n" .
-             "5. No marketing hype or exaggeration\n\n" .
-             "Return improved title and explain improvements in these categories:\n" .
-             "- Accessibility (plain language, clarity)\n" .
-             "- SEO (keywords, length, structure)\n" .
-             "- European tone (neutral, factual, institutional)\n" .
-             "- Simplicity (concise, clear message)\n\n" .
-             "Format response as JSON:\n" .
-             "{\"improved_title\": \"...\", \"improvements\": {\"accessibility\": \"...\", \"seo\": \"...\", \"european_tone\": \"...\", \"simplicity\": \"...\"}}";
+        "Current title: {$value}\n\n" .
+        ($context ? "Article content preview: " . substr($context, 0, 500) . "\n\n" : "") .
+        "Requirements:\n" .
+        "1. Clear, factual, institutional European tone\n" .
+        "2. Optimal length: 40-60 characters\n" .
+        "3. Include relevant keywords naturally\n" .
+        "4. Accessible language (plain English)\n" .
+        "5. No marketing hype or exaggeration\n\n" .
+        "Return improved title and explain improvements in these categories:\n" .
+        "- Accessibility (plain language, clarity)\n" .
+        "- SEO (keywords, length, structure)\n" .
+        "- European tone (neutral, factual, institutional)\n" .
+        "- Simplicity (concise, clear message)\n\n" .
+        "Format response as JSON:\n" .
+        "{\"improved_title\": \"...\", \"improvements\": {\"accessibility\": \"...\", \"seo\": \"...\", \"european_tone\": \"...\", \"simplicity\": \"...\"}}";
     }
     else {
       // Body or other fields
       return "Improve this content for readability, SEO, and European institutional tone:\n\n" .
-             "Current content: {$value}\n\n" .
-             "Requirements:\n" .
-             "1. Clear, structured paragraphs\n" .
-             "2. Professional European institutional tone\n" .
-             "3. Improved readability and flow\n" .
-             "4. SEO-friendly structure\n" .
-             "5. Maintain original meaning\n\n" .
-             "Return improved content and explain improvements.";
+        "Current content: {$value}\n\n" .
+        "Requirements:\n" .
+        "1. Clear, structured paragraphs\n" .
+        "2. Professional European institutional tone\n" .
+        "3. Improved readability and flow\n" .
+        "4. SEO-friendly structure\n" .
+        "5. Maintain original meaning\n\n" .
+        "Return improved content and explain improvements.";
     }
   }
 
@@ -298,21 +298,21 @@ class RealTimeController extends ControllerBase {
   protected function callAiForSuggestion($prompt) {
     // For now, return a hardcoded improvement based on the input
     // This is a temporary solution until we figure out the correct AI API
-    
+
     // Extract the title from the prompt
     if (preg_match('/Current title: (.+?)(\n|$)/i', $prompt, $matches)) {
       $original_title = trim($matches[1]);
-      
+
       // Generate a simple improvement
       $improved = $this->generateSimpleImprovement($original_title);
-      
+
       // Return in expected JSON format
       return json_encode([
         'improved_title' => $improved['title'],
         'improvements' => $improved['improvements']
       ]);
     }
-    
+
     // Fallback
     return json_encode([
       'improved_title' => 'Improved content based on AI analysis',
@@ -324,7 +324,7 @@ class RealTimeController extends ControllerBase {
       ]
     ]);
   }
-  
+
   /**
    * Generates a simple improvement for a title.
    */
@@ -335,10 +335,10 @@ class RealTimeController extends ControllerBase {
       'european_tone' => 'Neutral, factual, and institutional',
       'simplicity' => 'One clear responsibility statement'
     ];
-    
+
     // Basic improvements
     $improved = $title;
-    
+
     // Expand common acronyms
     $acronyms = [
       'EMA' => 'European Medicines Agency (EMA)',
@@ -346,7 +346,7 @@ class RealTimeController extends ControllerBase {
       'GDPR' => 'General Data Protection Regulation (GDPR)',
       'AI' => 'Artificial Intelligence (AI)',
     ];
-    
+
     foreach ($acronyms as $acronym => $expansion) {
       if (stripos($improved, $acronym) !== false && stripos($improved, $expansion) === false) {
         $improved = preg_replace('/\b' . $acronym . '\b/i', $expansion, $improved, 1);
@@ -354,13 +354,13 @@ class RealTimeController extends ControllerBase {
         break;
       }
     }
-    
+
     // Add "About" if missing and seems like it should be there
     if (!preg_match('/^(about|guide|overview)/i', $improved) && strlen($improved) < 50) {
       $improved = 'About ' . $improved;
       $improvements['seo'] .= '. Clear topic indication';
     }
-    
+
     return [
       'title' => $improved,
       'improvements' => $improvements
@@ -383,7 +383,7 @@ class RealTimeController extends ControllerBase {
         ];
       }
     }
-    
+
     // Fallback: treat entire response as suggestion
     return [
       'text' => trim($ai_response),
